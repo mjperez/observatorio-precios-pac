@@ -11,6 +11,7 @@ const ROLES_INGESTA = ["comercio", "terreno", "administrador"];
 const TAMANO_MAXIMO = 900_000;
 const FILAS_MAXIMAS = 500;
 const COLUMNAS = ["nombre", "marca", "formato", "precio"];
+const FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/;
 
 export type ErrorFila = { linea: number; mensaje: string };
 
@@ -92,11 +93,20 @@ export async function cargarCsv(
     );
   }
 
+  // Columnas opcionales para promociones y vigencia
+  const idxOferta = cabecera.indexOf("precio_oferta");
+  const idxInicio = cabecera.indexOf("fecha_inicio_vigencia");
+  const idxFin = cabecera.indexOf("fecha_fin_vigencia");
+  const idxCondiciones = cabecera.indexOf("condiciones");
+
   const { data: productos, error: errorCatalogo } = await supabase
     .from("productos")
     .select("id_producto, nombre, marca, formato, activo");
 
-  if (errorCatalogo) return fallo(`No se pudo leer el catálogo: ${errorCatalogo.message}`);
+  if (errorCatalogo) {
+    console.error("[ingesta/csv] Error leyendo catálogo:", errorCatalogo);
+    return fallo("No se pudo validar el catálogo de productos. Intenta nuevamente.");
+  }
 
   const clave = (nombre: string, marca: string, formato: string) =>
     `${nombre.trim().toLowerCase()}|${marca.trim().toLowerCase()}|${formato.trim().toLowerCase()}`;
@@ -110,10 +120,16 @@ export async function cargarCsv(
     id_producto: number;
     id_comercio: number;
     valor: number;
+    precio_oferta: number | null;
+    fecha_inicio_vigencia: string;
+    fecha_fin_vigencia: string | null;
+    condiciones: string | null;
     origen: string;
     validado: boolean;
+    estado_validacion: string;
   }[] = [];
   const vistos = new Map<number, number>();
+  const hoyIso = new Date().toISOString().slice(0, 10);
 
   for (let i = 1; i < filas.length; i++) {
     const fila = filas[i];
@@ -161,14 +177,73 @@ export async function cargarCsv(
       });
       continue;
     }
+
+    // Validación opcional de precio oferta y vigencias
+    const ofertaRaw = idxOferta !== -1 ? (fila[idxOferta] ?? "").trim() : "";
+    let precioOferta: number | null = null;
+    if (ofertaRaw !== "") {
+      precioOferta = parsearPrecio(ofertaRaw);
+      if (precioOferta === null || precioOferta >= valor) {
+        errores.push({
+          linea,
+          mensaje: `precio_oferta inválido ("${ofertaRaw}"): debe ser un monto válido menor al precio normal`,
+        });
+        continue;
+      }
+    }
+
+    const inicioRaw = idxInicio !== -1 ? (fila[idxInicio] ?? "").trim() : "";
+    const finRaw = idxFin !== -1 ? (fila[idxFin] ?? "").trim() : "";
+    const condRaw = idxCondiciones !== -1 ? (fila[idxCondiciones] ?? "").trim() : "";
+
+    if (inicioRaw !== "" && !FECHA_ISO.test(inicioRaw)) {
+      errores.push({
+        linea,
+        mensaje: `fecha_inicio_vigencia inválida ("${inicioRaw}"): usa formato AAAA-MM-DD`,
+      });
+      continue;
+    }
+
+    if (finRaw !== "" && !FECHA_ISO.test(finRaw)) {
+      errores.push({
+        linea,
+        mensaje: `fecha_fin_vigencia inválida ("${finRaw}"): usa formato AAAA-MM-DD`,
+      });
+      continue;
+    }
+
+    const fechaInicio = inicioRaw || hoyIso;
+    const fechaFin = finRaw || null;
+
+    if (fechaFin && fechaFin < fechaInicio) {
+      errores.push({
+        linea,
+        mensaje: "fecha_fin_vigencia no puede ser anterior a fecha_inicio_vigencia",
+      });
+      continue;
+    }
+
+    if (precioOferta !== null && !fechaFin) {
+      errores.push({
+        linea,
+        mensaje: "las filas con precio_oferta deben incluir fecha_fin_vigencia (AAAA-MM-DD)",
+      });
+      continue;
+    }
+
     vistos.set(producto.id_producto, linea);
 
     insertables.push({
       id_producto: producto.id_producto,
       id_comercio: idComercio,
       valor,
+      precio_oferta: precioOferta,
+      fecha_inicio_vigencia: fechaInicio,
+      fecha_fin_vigencia: fechaFin,
+      condiciones: condRaw ? condRaw.slice(0, 240) : null,
       origen: "csv",
-      validado: true,
+      validado: false,
+      estado_validacion: "pendiente",
     });
   }
 
@@ -188,16 +263,18 @@ export async function cargarCsv(
   const { error: errorInsercion } = await supabase.from("precios").insert(insertables);
 
   if (errorInsercion) {
-    return fallo(`No se pudo guardar: ${errorInsercion.message}`);
+    console.error("[ingesta/csv] Error insertando precios:", errorInsercion);
+    return fallo("No se pudieron registrar los precios. Verifica tus permisos o intenta más tarde.");
   }
 
   revalidatePath("/admin");
+  revalidatePath("/admin/validacion");
   revalidatePath("/ingesta/csv");
 
   return {
     ok: true,
     insertadas: insertables.length,
     errores: [],
-    mensaje: `Se cargaron ${insertables.length} precios.`,
+    mensaje: `Se cargaron ${insertables.length} precios en estado pendiente de validación.`,
   };
 }
