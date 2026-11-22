@@ -9,14 +9,14 @@ const OPCIONES = [
   {
     nombre: "Carga manual",
     href: "/ingesta/manual",
-    desc: "Selecciona un comercio en el mapa y registra los precios uno por uno. Sirve para registros puntuales o para corregir un valor.",
+    desc: "Registra precios normales o promocionales uno por uno, indicando fechas de vigencia y condiciones comerciales.",
     icono: ClipboardList,
-    nota: "Un producto a la vez, con fecha automática.",
+    nota: "Un producto a la vez, con soporte de ofertas.",
   },
   {
     nombre: "Carga por planilla",
     href: "/ingesta/csv",
-    desc: "Sube la planilla semanal en CSV. Cada fila se valida por separado y los errores se informan por número de línea.",
+    desc: "Sube la planilla semanal en CSV. Cada fila se valida antes de guardar y los errores se informan por número de línea.",
     icono: Table2,
     nota: "Carga masiva con informe de errores.",
   },
@@ -30,11 +30,11 @@ export default async function IngestaPage() {
       <EncabezadoPagina
         miga={[{ etiqueta: "Inicio", href: "/" }, { etiqueta: "Carga de precios" }]}
         titulo="Carga de precios"
-        descripcion="Elige el método según el volumen: registro individual desde el mapa o planilla completa de la semana."
+        descripcion="Elige el método según el volumen: registro individual de precios y ofertas o planilla completa de la semana."
         acciones={<span className="micro text-pac-tinta-suave">Perfil {rol}</span>}
       />
 
-      <div className="grid gap-px border border-pac-linea bg-pac-linea sm:grid-cols-2 mt-8 mb-14">
+      <div className="mt-8 mb-14 grid gap-px border border-pac-linea bg-pac-linea sm:grid-cols-2">
         {OPCIONES.map((o) => {
           const Icono = o.icono;
           return (
