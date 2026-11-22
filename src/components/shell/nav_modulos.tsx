@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils";
 
 const MODULOS = [
   { href: "/admin", etiqueta: "Resumen", exacto: true },
+  { href: "/admin/validacion", etiqueta: "Validación" },
+  { href: "/admin/usuarios", etiqueta: "Usuarios" },
   { href: "/admin/productos", etiqueta: "Productos" },
   { href: "/admin/categorias", etiqueta: "Categorías" },
   { href: "/admin/comercios", etiqueta: "Comercios" },
