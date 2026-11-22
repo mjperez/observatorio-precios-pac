@@ -8,7 +8,7 @@ export const metadata = { title: "Carga de precios" };
 const OPCIONES = [
   {
     nombre: "Carga manual",
-    href: "/mapa",
+    href: "/ingesta/manual",
     desc: "Selecciona un comercio en el mapa y registra los precios uno por uno. Sirve para registros puntuales o para corregir un valor.",
     icono: ClipboardList,
     nota: "Un producto a la vez, con fecha automática.",
