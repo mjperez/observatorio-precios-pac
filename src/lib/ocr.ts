@@ -24,7 +24,14 @@ export const PROMPT_OCR = [
   "Responde únicamente con JSON válido, sin texto adicional ni bloques de código.",
   'Usa la forma {"comercio": string|null, "fecha": "YYYY-MM-DD"|null,',
   '"items": [{"nombre": string, "precio": number, "cantidad": number|null}]}.',
+  "Recorre la boleta línea por línea de arriba abajo y no omitas ningún artículo legible:",
+  "la cantidad de items debe acercarse al número de artículos que declara la boleta.",
+  "La cantidad es el número que abre la línea, antes de la descripción.",
+  "Si el nombre del producto contiene números, no los confundas con la cantidad.",
   "El precio es el monto final de cada línea en pesos chilenos, sin puntos ni coma.",
+  "La fecha impresa viene como DD/MM/AAAA. Conviértela a AAAA-MM-DD sin intercambiar",
+  "el día y el mes: si dice 20/06/2026, la respuesta es 2026-06-20.",
+  "El comercio es el nombre del local seguido de su dirección, tal como están impresos.",
   "Si un dato no es legible, usa null. No inventes productos ni valores.",
 ].join(" ");
 
