@@ -25,12 +25,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "La sesión expiró. Vuelve a ingresar." }, { status: 401 });
   }
 
-  const clave = process.env.VISION_API_KEY ?? process.env.OPENAI_API_KEY;
+  const claveDeepSeek = process.env.DEEPSEEK_API_KEY;
+  const clave = claveDeepSeek ?? process.env.OPENAI_API_KEY;
   if (!clave) {
     return NextResponse.json(
       {
         error:
-          "El lector de boletas no está disponible: falta configurar VISION_API_KEY en el servidor. Puedes usar la carga manual o por planilla.",
+          "El lector de boletas no está disponible: falta configurar DEEPSEEK_API_KEY u OPENAI_API_KEY en el servidor. Puedes usar la carga manual o por planilla.",
       },
       { status: 503 },
     );
@@ -72,8 +73,11 @@ export async function POST(request: NextRequest) {
 
   try {
     const base64 = Buffer.from(await imagen.arrayBuffer()).toString("base64");
-    const modelo = process.env.VISION_MODEL ?? "gpt-4o-mini";
-    const baseUrl = process.env.VISION_BASE_URL ?? "https://api.openai.com/v1";
+    const modelo =
+      process.env.VISION_MODEL ?? (claveDeepSeek ? "deepseek-flash" : "gpt-4o-mini");
+    const baseUrl =
+      process.env.VISION_BASE_URL ??
+      (claveDeepSeek ? "https://api.deepseek.com" : "https://api.openai.com/v1");
 
     const respuesta = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
@@ -85,6 +89,9 @@ export async function POST(request: NextRequest) {
         model: modelo,
         temperature: 0,
         max_tokens: 1200,
+        // DeepSeek activa el razonamiento por defecto; en una boleta solo suma
+        // latencia y tokens antes de devolver el JSON.
+        ...(claveDeepSeek ? { thinking: { type: "disabled" } } : {}),
         messages: [
           { role: "system", content: PROMPT_OCR },
           {
