@@ -8,7 +8,7 @@ function formulario(campos: Record<string, string>) {
 }
 
 const BASE = {
-  nombre: "Pan corriente (marraqueta)",
+  nombre: "Marraqueta",
   marca: "sin marca",
   formato: "1 kg",
   unidad: "kg",

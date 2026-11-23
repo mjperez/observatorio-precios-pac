@@ -37,7 +37,7 @@ on conflict (nombre) do nothing;
 insert into public.productos (nombre, marca, formato, unidad, id_categoria)
 select v.nombre, v.marca, v.formato, v.unidad, c.id_categoria
 from (values
-  ('Pan corriente (marraqueta)',   'sin marca', '1 kg',   'kg',   'Pan y cereales'),
+  ('Marraqueta',   'sin marca', '1 kg',   'kg',   'Pan y cereales'),
   ('Arroz grado 2',                'sin marca', '1 kg',   'kg',   'Pan y cereales'),
   ('Fideos spaghetti',             'Carozzi',   '400 g',  'un',   'Pan y cereales'),
   ('Harina sin polvos de hornear', 'sin marca', '1 kg',   'kg',   'Pan y cereales'),
@@ -83,13 +83,11 @@ on conflict (alias) do nothing;
 
 -- Alias de producto: el ajuste 0004 agregó id_producto y el CHECK
 -- alias_un_solo_destino, así que un alias puede apuntar al producto canónico.
--- El ejemplo "marraqueta = pan batido" es el que usa la propia historia.
+-- "pan batido" es el sinónimo que usa la historia para la marraqueta.
 insert into public.aliases (alias, id_producto)
 select v.alias, p.id_producto
 from (values
-  ('marraqueta',  'Pan corriente (marraqueta)'),
-  ('pan batido',  'Pan corriente (marraqueta)'),
-  ('pan corriente', 'Pan corriente (marraqueta)')
+  ('pan batido',  'Marraqueta')
 ) as v(alias, producto)
 join public.productos p on p.nombre = v.producto
 on conflict (alias) do nothing;
@@ -103,7 +101,7 @@ select round(b.base * f.factor / 10) * 10,
        c.id_comercio,
        now() - make_interval(days => f.dias)
 from (values
-  ('Pan corriente (marraqueta)',   1290),
+  ('Marraqueta',   1290),
   ('Arroz grado 2',                1590),
   ('Fideos spaghetti',              990),
   ('Harina sin polvos de hornear', 1190),

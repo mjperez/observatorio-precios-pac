@@ -67,7 +67,7 @@ describe("texto de producto para la búsqueda (US-E1)", () => {
       {
         id_producto: 1,
         id_categoria: 1,
-        nombre: "Pan corriente",
+        nombre: "Marraqueta",
         marca: "sin marca",
         formato: "1 kg",
         categoria: "Pan y cereales",
@@ -90,7 +90,7 @@ describe("texto de producto para la búsqueda (US-E1)", () => {
       {
         id_producto: 1,
         id_categoria: 1,
-        nombre: "Pan corriente (marraqueta)",
+        nombre: "Marraqueta",
         marca: "sin marca",
         formato: "1 kg",
         categoria: "Pan y cereales",
@@ -98,7 +98,7 @@ describe("texto de producto para la búsqueda (US-E1)", () => {
       mapas,
     );
 
-    expect(texto).toContain("Pan corriente (marraqueta)");
+    expect(texto).toContain("Marraqueta");
     expect(texto.endsWith("marraqueta")).toBe(true);
   });
 
