@@ -353,6 +353,8 @@ export type Database = {
       registros_auditoria: {
         Row: {
           accion: string
+          datos_anteriores: Json | null
+          datos_nuevos: Json | null
           fecha: string
           hash: string
           hash_anterior: number | null
@@ -363,6 +365,8 @@ export type Database = {
         }
         Insert: {
           accion: string
+          datos_anteriores?: Json | null
+          datos_nuevos?: Json | null
           fecha?: string
           hash: string
           hash_anterior?: number | null
@@ -373,6 +377,8 @@ export type Database = {
         }
         Update: {
           accion?: string
+          datos_anteriores?: Json | null
+          datos_nuevos?: Json | null
           fecha?: string
           hash?: string
           hash_anterior?: number | null

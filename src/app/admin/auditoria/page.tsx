@@ -26,6 +26,83 @@ function fechaCorta(valor: string) {
   });
 }
 
+const ETIQUETA_CAMPO: Record<string, string> = {
+  valor: "Valor",
+  estado_validacion: "Estado",
+  validado: "Validado",
+  motivo_rechazo: "Motivo",
+  vigente_desde: "Desde",
+  vigente_hasta: "Hasta",
+  id_producto: "Producto",
+  id_comercio: "Comercio",
+  origen: "Origen",
+  id_boleta: "Boleta",
+};
+
+const PESOS = new Intl.NumberFormat("es-CL", {
+  style: "currency",
+  currency: "CLP",
+  maximumFractionDigits: 0,
+});
+
+function mostrarCampo(campo: string, valor: unknown): string {
+  if (valor === null || valor === undefined || valor === "") return "—";
+  if (campo === "valor") return PESOS.format(Number(valor));
+  if (typeof valor === "boolean") return valor ? "sí" : "no";
+  return String(valor);
+}
+
+type FilaAuditada = Record<string, unknown>;
+
+/**
+ * Resume qué cambió en el movimiento. Devuelve null cuando el eslabón es
+ * anterior a la incorporación del detalle de valores: ahí solo hay metadatos.
+ */
+function resumenCambio(r: {
+  accion: string;
+  datos_anteriores: unknown;
+  datos_nuevos: unknown;
+}): string | null {
+  const antes = (r.datos_anteriores ?? null) as FilaAuditada | null;
+  const despues = (r.datos_nuevos ?? null) as FilaAuditada | null;
+  if (!antes && !despues) return null;
+
+  const claves = ["valor", "id_producto", "id_comercio"];
+
+  if (r.accion === "INSERT" && despues) {
+    return claves
+      .filter((c) => despues[c] !== undefined)
+      .map((c) => `${ETIQUETA_CAMPO[c] ?? c} ${mostrarCampo(c, despues[c])}`)
+      .join(" · ");
+  }
+
+  if (r.accion === "DELETE" && antes) {
+    return claves
+      .filter((c) => antes[c] !== undefined)
+      .map((c) => `${ETIQUETA_CAMPO[c] ?? c} ${mostrarCampo(c, antes[c])}`)
+      .join(" · ");
+  }
+
+  if (antes && despues) {
+    const cambiados = Object.keys(despues).filter(
+      (c) => JSON.stringify(antes[c]) !== JSON.stringify(despues[c]),
+    );
+    if (cambiados.length === 0) return "sin cambios";
+    return cambiados
+      .slice(0, 3)
+      .map(
+        (c) =>
+          `${ETIQUETA_CAMPO[c] ?? c}: ${mostrarCampo(c, antes[c])} → ${mostrarCampo(
+            c,
+            despues[c],
+          )}`,
+      )
+      .join(" · ");
+  }
+
+  return null;
+}
+
 export const metadata = { title: "Auditoría" };
 
 export default async function AuditoriaPage() {
@@ -35,7 +112,7 @@ export default async function AuditoriaPage() {
     supabase
       .from("registros_auditoria")
       .select(
-        "id_registro, tabla, accion, registro_id, fecha, hash, hash_anterior, usuarios(nombre)",
+        "id_registro, tabla, accion, registro_id, fecha, hash, hash_anterior, datos_anteriores, datos_nuevos, usuarios(nombre)",
       )
       .order("id_registro", { ascending: false })
       .limit(50),
@@ -99,10 +176,10 @@ export default async function AuditoriaPage() {
         </div>
 
         <div className="overflow-x-auto border border-pac-linea bg-white">
-          <table className="w-full min-w-[720px] border-collapse text-left">
+          <table className="w-full min-w-[900px] border-collapse text-left">
             <thead>
               <tr className="border-b border-pac-linea bg-pac-fondo/70">
-                {["#", "Fecha", "Quién", "Módulo", "Acción", "Sello"].map((h) => (
+                {["#", "Fecha", "Quién", "Módulo", "Acción", "Qué cambió", "Sello"].map((h) => (
                   <th
                     key={h}
                     scope="col"
@@ -114,7 +191,9 @@ export default async function AuditoriaPage() {
               </tr>
             </thead>
             <tbody>
-              {lista.map((r) => (
+              {lista.map((r) => {
+                const resumen = resumenCambio(r);
+                return (
                 <tr
                   key={r.id_registro}
                   className="border-b border-pac-linea transition-colors last:border-b-0 hover:bg-pac-fondo/50"
@@ -149,6 +228,18 @@ export default async function AuditoriaPage() {
                       {ACCION_ETIQUETA[r.accion] ?? r.accion}
                     </Insignia>
                   </td>
+                  <td className="px-3 py-2.5 text-[12px] text-pac-tinta">
+                    {resumen === null ? (
+                      <span
+                        className="text-pac-tinta-suave"
+                        title="Movimiento anterior a la incorporación del detalle de valores."
+                      >
+                        —
+                      </span>
+                    ) : (
+                      resumen
+                    )}
+                  </td>
                   <td
                     className="px-3 py-2.5 font-mono text-[11px] text-pac-tinta-suave"
                     title={`Sello completo: ${r.hash}\nEncadena el movimiento #${r.hash_anterior ?? "inicio"}`}
@@ -156,7 +247,8 @@ export default async function AuditoriaPage() {
                     {r.hash.slice(0, 8)}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -176,7 +268,9 @@ export default async function AuditoriaPage() {
             </p>
             <p className="mt-1.5">
               Se muestran los últimos {lista.length} de {total.count ?? 0}. La
-              verificación se ejecuta siempre sobre la cadena completa.
+              verificación se ejecuta siempre sobre la cadena completa. El detalle
+              de valores se guarda desde el movimiento 3182; los anteriores
+              conservan solo los metadatos.
             </p>
           </div>
         )}
