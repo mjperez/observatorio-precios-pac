@@ -12,6 +12,7 @@ export type ItemOCR = {
 export type BoletaOCR = {
   comercio: string | null;
   fecha: string | null;
+  subtotal: number | null;
   items: ItemOCR[];
 };
 
@@ -23,12 +24,15 @@ export const PROMPT_OCR = [
   "Extrae los datos de esta boleta de compra chilena.",
   "Responde únicamente con JSON válido, sin texto adicional ni bloques de código.",
   'Usa la forma {"comercio": string|null, "fecha": "YYYY-MM-DD"|null,',
+  '"subtotal": number|null,',
   '"items": [{"nombre": string, "precio": number, "cantidad": number|null}]}.',
   "Recorre la boleta línea por línea de arriba abajo y no omitas ningún artículo legible:",
   "la cantidad de items debe acercarse al número de artículos que declara la boleta.",
   "La cantidad es el número que abre la línea, antes de la descripción.",
   "Si el nombre del producto contiene números, no los confundas con la cantidad.",
-  "El precio es el monto final de cada línea en pesos chilenos, sin puntos ni coma.",
+  "El precio es el monto final de cada línea en pesos chilenos, sin puntos ni coma:",
+  "si la línea dice 2 x 990 y el monto es 1.980, el precio es 1980.",
+  "El subtotal es el total de los artículos antes de impuestos y propinas, tal como está impreso.",
   "La fecha impresa viene como DD/MM/AAAA. Conviértela a AAAA-MM-DD sin intercambiar",
   "el día y el mes: si dice 20/06/2026, la respuesta es 2026-06-20.",
   "El comercio es el nombre del local seguido de su dirección, tal como están impresos.",
@@ -128,8 +132,46 @@ export function validarBoletaOCR(valor: unknown): ValidacionOCR {
     typeof valor.comercio === "string" && valor.comercio.trim().length > 0
       ? valor.comercio.trim().slice(0, 120)
       : null;
+  const subtotal =
+    valor.subtotal === null || valor.subtotal === undefined
+      ? null
+      : parsearMontoOCR(valor.subtotal as string | number);
 
-  return { ok: true, datos: { comercio, fecha, items } };
+  return { ok: true, datos: { comercio, fecha, subtotal, items } };
+}
+
+export type CuadreBoleta = {
+  suma: number;
+  subtotal: number | null;
+  diferencia: number;
+  cuadra: boolean;
+};
+
+/**
+ * Control de calidad sobre los montos. La foto arrugada hace que el modelo
+ * omita líneas o invente cifras, y eso no se ve mirando el JSON: sí se ve
+ * cuando la suma de los artículos no coincide con el subtotal impreso.
+ *
+ * La tolerancia es el mayor entre 100 pesos y 0,5% del subtotal, porque un
+ * artículo suelto puede pesar poco en una boleta grande. Sin subtotal legible
+ * no hay nada que verificar y se considera correcto.
+ */
+export function cuadreBoleta(datos: BoletaOCR): CuadreBoleta {
+  const suma = Math.round(datos.items.reduce((total, item) => total + item.precio, 0) * 100) / 100;
+
+  if (datos.subtotal === null) {
+    return { suma, subtotal: null, diferencia: 0, cuadra: true };
+  }
+
+  const diferencia = Math.round((suma - datos.subtotal) * 100) / 100;
+  const tolerancia = Math.max(100, datos.subtotal * 0.005);
+
+  return {
+    suma,
+    subtotal: datos.subtotal,
+    diferencia,
+    cuadra: Math.abs(diferencia) <= tolerancia,
+  };
 }
 
 /** Coincidencia simple por tokens entre el nombre de la boleta y el catálogo. */

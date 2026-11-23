@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
-import { PROMPT_OCR, extraerJson, validarBoletaOCR } from "@/lib/ocr";
+import { PROMPT_OCR, cuadreBoleta, extraerJson, validarBoletaOCR } from "@/lib/ocr";
 
 const TAMANO_MAXIMO = 5_242_880;
 const MIME_PERMITIDOS = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -120,7 +120,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: boleta.error }, { status: 422 });
     }
 
-    return NextResponse.json({ ruta, datos: boleta.datos });
+    return NextResponse.json({
+      ruta,
+      datos: boleta.datos,
+      cuadre: cuadreBoleta(boleta.datos),
+    });
   } catch (error) {
     console.error("[ocr/route] Error procesando boleta:", error);
     await supabase.storage.from("boletas").remove([ruta]);

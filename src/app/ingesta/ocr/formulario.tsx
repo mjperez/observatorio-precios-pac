@@ -6,7 +6,7 @@ import { createClient } from "@/utils/supabase/client";
 import { Aviso } from "@/components/ui/aviso";
 import { Boton } from "@/components/ui/boton";
 import { Panel } from "@/components/ui/panel";
-import { coincideProducto, type BoletaOCR } from "@/lib/ocr";
+import { coincideProducto, type BoletaOCR, type CuadreBoleta } from "@/lib/ocr";
 import { confirmarBoletaOCR, type EstadoOCR } from "./acciones";
 
 const supabase = createClient();
@@ -18,7 +18,7 @@ type Producto = {
   marca: string;
   nombre: string;
 };
-type Analisis = { ruta: string; datos: BoletaOCR };
+type Analisis = { ruta: string; datos: BoletaOCR; cuadre: CuadreBoleta };
 
 export function FormularioOCR() {
   const [comercios, setComercios] = useState<Comercio[]>([]);
@@ -77,7 +77,7 @@ export function FormularioOCR() {
       const json = (await respuesta.json()) as Analisis & { error?: string };
       if (!respuesta.ok) throw new Error(json.error ?? "No se pudo analizar la boleta.");
 
-      setAnalisis({ ruta: json.ruta, datos: json.datos });
+      setAnalisis({ ruta: json.ruta, datos: json.datos, cuadre: json.cuadre });
       const sugerencias: Record<number, number> = {};
       json.datos.items.forEach((item, indice) => {
         const candidato = productos.find((p) =>
@@ -173,6 +173,17 @@ export function FormularioOCR() {
                 {analisis.datos.fecha ?? "Fecha no detectada"} · {items.length} ítems
               </p>
             </div>
+
+            {!analisis.cuadre.cuadra && (
+              <div className="border-b border-pac-linea p-4">
+                <Aviso tono="alerta" titulo="La suma no cuadra con el subtotal">
+                  Los ítems suman ${analisis.cuadre.suma.toLocaleString("es-CL")} y
+                  la boleta declara $
+                  {analisis.cuadre.subtotal?.toLocaleString("es-CL")}. Puede faltar
+                  algún artículo o estar mal leído: revísalo antes de confirmar.
+                </Aviso>
+              </div>
+            )}
 
             <form action={accion} className="space-y-4 p-4">
               <input type="hidden" name="comercio" value={idComercio} />
