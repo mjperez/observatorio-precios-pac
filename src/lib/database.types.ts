@@ -197,6 +197,8 @@ export type Database = {
       precios: {
         Row: {
           condiciones: string | null
+          detalle_anomalia: string | null
+          es_anomalia: boolean
           estado_validacion: string
           fecha_fin_vigencia: string | null
           fecha_inicio_vigencia: string | null
@@ -218,6 +220,8 @@ export type Database = {
         }
         Insert: {
           condiciones?: string | null
+          detalle_anomalia?: string | null
+          es_anomalia?: boolean
           estado_validacion?: string
           fecha_fin_vigencia?: string | null
           fecha_inicio_vigencia?: string | null
@@ -239,6 +243,8 @@ export type Database = {
         }
         Update: {
           condiciones?: string | null
+          detalle_anomalia?: string | null
+          es_anomalia?: boolean
           estado_validacion?: string
           fecha_fin_vigencia?: string | null
           fecha_inicio_vigencia?: string | null
@@ -306,6 +312,7 @@ export type Database = {
       productos: {
         Row: {
           activo: boolean
+          embedding: string | null
           formato: string
           id_categoria: number
           id_producto: number
@@ -315,6 +322,7 @@ export type Database = {
         }
         Insert: {
           activo?: boolean
+          embedding?: string | null
           formato: string
           id_categoria: number
           id_producto?: never
@@ -324,6 +332,7 @@ export type Database = {
         }
         Update: {
           activo?: boolean
+          embedding?: string | null
           formato?: string
           id_categoria?: number
           id_producto?: never
@@ -861,6 +870,37 @@ export type Database = {
         | { Args: { table_name: string }; Returns: string }
       enablelongtransactions: { Args: never; Returns: string }
       equals: { Args: { geom1: unknown; geom2: unknown }; Returns: boolean }
+      fn_confirmar_boleta_ocr: {
+        Args: {
+          p_comercio: number
+          p_fecha_inicio?: string
+          p_items: Json
+          p_ruta: string
+        }
+        Returns: string
+      }
+      fn_comercios_en_radio: {
+        Args: { p_lat: number; p_lng: number; p_radio_metros: number }
+        Returns: {
+          direccion: string
+          distancia_metros: number
+          id_comercio: number
+          lat: number
+          lng: number
+          nombre: string
+          tipo: string
+        }[]
+      }
+      fn_buscar_productos_semanticos: {
+        Args: { consulta: string; limite?: number }
+        Returns: {
+          formato: string
+          id_producto: number
+          marca: string
+          nombre: string
+          similitud: number
+        }[]
+      }
       fn_comparador: {
         Args: { p_lat?: number; p_lng?: number; p_producto: number }
         Returns: {

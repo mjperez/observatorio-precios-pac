@@ -11,6 +11,7 @@ import { Contenedor, EncabezadoPagina, EstadoVacio } from "@/components/ui/pagin
 import { Etiqueta, Insignia } from "@/components/ui/etiqueta";
 import { Panel } from "@/components/ui/panel";
 import { HistorialPrecios } from "@/components/historial_precios";
+import { BusquedaSemantica } from "@/components/busqueda_semantica";
 import {
   formatearDistancia,
   type FilaComparador,
@@ -39,6 +40,7 @@ type Respuesta = {
   precios: FilaComparador[];
   resumen: ResumenComparador | null;
   referencia: Referencia | null;
+  total_comercios: number;
 };
 
 function pesos(valor: number) {
@@ -120,11 +122,18 @@ export default function Comparador() {
           precios: json.precios ?? [],
           resumen: json.resumen,
           referencia: json.referencia,
+          total_comercios: json.total_comercios ?? 0,
         });
       })
       .catch(() => {
         if (cancelado) return;
-        setRespuesta({ clave, precios: [], resumen: null, referencia: null });
+        setRespuesta({
+          clave,
+          precios: [],
+          resumen: null,
+          referencia: null,
+          total_comercios: 0,
+        });
         setError("No se pudieron obtener los precios. Intenta nuevamente.");
       });
 
@@ -173,6 +182,7 @@ export default function Comparador() {
   const resumen = respuesta?.clave === clave ? respuesta.resumen : null;
   const referencia = respuesta?.clave === clave ? respuesta.referencia : null;
   const minimo = resumen?.minimo ?? null;
+  const totalComercios = respuesta?.clave === clave ? respuesta.total_comercios : 0;
 
   return (
     <>
@@ -189,6 +199,13 @@ export default function Comparador() {
           <div className="grid gap-6 py-8 lg:grid-cols-[320px_1fr] lg:items-start">
             {/* Catálogo */}
             <Panel className="lg:sticky lg:top-24">
+              <BusquedaSemantica
+                onSeleccionar={(producto) => {
+                  setSeleccion(producto);
+                  setBusqueda("");
+                  setError(null);
+                }}
+              />
               <div className="border-b border-pac-linea p-3">
                 <div className="relative">
                   <Search
@@ -286,9 +303,17 @@ export default function Comparador() {
 
                     <dl className="flex items-end gap-6">
                       <div>
-                        <dt className="micro mb-1 text-pac-tinta-suave">Comercios</dt>
+                        <dt className="micro mb-1 text-pac-tinta-suave">
+                          Comercios con precio
+                        </dt>
                         <dd className="cifra font-slab text-[20px] font-bold leading-none text-pac-tinta">
                           {resumen?.comercios ?? filas.length}
+                          {totalComercios > 0 && (
+                            <span className="text-[13px] text-pac-tinta-suave">
+                              {" "}
+                              de {totalComercios}
+                            </span>
+                          )}
                         </dd>
                       </div>
                       <div>
@@ -375,6 +400,16 @@ export default function Comparador() {
                       ? "Distancias medidas desde tu ubicación."
                       : "Distancias medidas desde el centro de los comercios registrados. Activa tu ubicación para medirlas desde donde estás."}
                   </p>
+
+                  {resumen && totalComercios > resumen.comercios && (
+                    <p className="mb-3 text-[11px] leading-relaxed text-pac-tinta-suave">
+                      El listado reúne solo los comercios con precio vigente y
+                      validado. Con los datos actuales no es posible distinguir
+                      entre un comercio que no vende el producto y uno que aún
+                      no fue relevado; el observatorio lo registra como
+                      limitación del modelo.
+                    </p>
+                  )}
 
                   <div className="hidden items-center gap-4 border border-b-0 border-pac-linea bg-pac-fondo px-4 py-2 sm:flex">
                     <span className="w-6 shrink-0" />

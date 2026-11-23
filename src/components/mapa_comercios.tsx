@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Check, Store } from "lucide-react";
@@ -55,6 +55,16 @@ export default function MapaComercios() {
   const [seleccionado, setSeleccionado] = useState<ComercioMapa | null>(null);
   const [precios, setPrecios] = useState<PrecioVigente[]>([]);
 
+  // US-B3. Radio desde la ubicación del navegador. Sin punto o sin radio se
+  // muestra la comuna completa; con ambos se consulta la función PostGIS.
+  const [puntoUsuario, setPuntoUsuario] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [radio, setRadio] = useState<number | null>(null);
+  const [pidiendoUbicacion, setPidiendoUbicacion] = useState(false);
+  const [errorUbicacion, setErrorUbicacion] = useState<string | null>(null);
+
   const [productos, setProductos] = useState<Producto[]>([]);
   const [formProducto, setFormProducto] = useState<number | null>(null);
   const [formValor, setFormValor] = useState("");
@@ -65,13 +75,41 @@ export default function MapaComercios() {
   const [misComercios, setMisComercios] = useState<ComercioPropio[]>([]);
   const [comercioElegido, setComercioElegido] = useState<number | null>(null);
 
-  // 1. Cargar comercios desde la vista (reemplaza a dbSimulada)
+  // 1. Cargar todos los comercios o solo los del radio elegido (US-B3).
   useEffect(() => {
-    supabase
-      .from("v_comercios_mapa")
-      .select("*")
-      .then(({ data }) => setComercios((data as ComercioMapa[]) ?? []));
-  }, []);
+    let cancelado = false;
+
+    if (!puntoUsuario || radio === null) {
+      supabase
+        .from("v_comercios_mapa")
+        .select("*")
+        .then(({ data }) => {
+          if (!cancelado) setComercios((data as ComercioMapa[]) ?? []);
+        });
+    } else {
+      supabase
+        .rpc("fn_comercios_en_radio", {
+          p_lat: puntoUsuario.lat,
+          p_lng: puntoUsuario.lng,
+          p_radio_metros: radio,
+        })
+        .then(({ data, error }) => {
+          if (cancelado) return;
+          if (error) {
+            setErrorUbicacion(
+              "No se pudo filtrar por distancia. Se muestran todos los comercios.",
+            );
+            setRadio(null);
+            return;
+          }
+          setComercios((data as ComercioMapa[]) ?? []);
+        });
+    }
+
+    return () => {
+      cancelado = true;
+    };
+  }, [puntoUsuario, radio]);
 
   // 2. Inicializar el mapa una sola vez y limpiarlo al desmontar
   useEffect(() => {
@@ -113,7 +151,14 @@ export default function MapaComercios() {
   // 3. Dibujar un círculo por comercio y encuadrar el mapa
   useEffect(() => {
     const mapa = mapaRef.current;
-    if (!mapa || comercios.length === 0) return;
+    if (!mapa) return;
+
+    // Al cambiar el radio hay que retirar los marcadores anteriores: sin esto
+    // los pines filtrados se superponen a los que ya estaban dibujados.
+    marcadoresRef.current.forEach((marcador) => marcador.remove());
+    marcadoresRef.current.clear();
+
+    if (comercios.length === 0) return;
 
     comercios.forEach((c) => {
       const marcador = L.circleMarker([c.lat, c.lng], {
@@ -223,10 +268,10 @@ export default function MapaComercios() {
       id_comercio: idComercioDestino,
       valor,
       fecha_registro: new Date().toISOString(),
-      // US-D1: el comparador solo publica precios validados. Lo que entra por el
-      // formulario lo carga un usuario con rol, así que nace validado.
+      // Sprint 3: todo precio cargado desde el mapa entra pendiente de revisión.
       origen: "manual",
-      validado: true,
+      validado: false,
+      estado_validacion: "pendiente",
     });
     setGuardando(false);
 
@@ -234,7 +279,7 @@ export default function MapaComercios() {
       setMensaje(`Error: ${error.message}`);
       return;
     }
-    setMensaje("Precio registrado.");
+    setMensaje("Precio enviado a validación.");
     setFormValor("");
     setFormProducto(null);
     const { data } = await supabase
@@ -243,6 +288,42 @@ export default function MapaComercios() {
       .eq("id_comercio", idComercioDestino);
     setPrecios((data as unknown as PrecioVigente[]) ?? []);
   }
+
+  const usarMiUbicacion = useCallback(() => {
+    setErrorUbicacion(null);
+    if (!("geolocation" in navigator)) {
+      setErrorUbicacion(
+        "Tu navegador no permite geolocalización. Puedes seguir usando el mapa completo.",
+      );
+      return;
+    }
+    setPidiendoUbicacion(true);
+    navigator.geolocation.getCurrentPosition(
+      (posicion) => {
+        setPuntoUsuario({
+          lat: posicion.coords.latitude,
+          lng: posicion.coords.longitude,
+        });
+        setRadio(500);
+        setSeleccionado(null);
+        setPidiendoUbicacion(false);
+      },
+      () => {
+        setPidiendoUbicacion(false);
+        setErrorUbicacion(
+          "No se pudo obtener tu ubicación. Revisa el permiso del navegador e inténtalo otra vez.",
+        );
+      },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 },
+    );
+  }, []);
+
+  const cambiarRadio = (valor: string) => {
+    setRadio(valor === "" ? null : Number(valor));
+    setSeleccionado(null);
+  };
+
+  const etiquetaRadio = radio === null ? "" : radio >= 1000 ? `${radio / 1000} km` : `${radio} m`;
 
   // Card visible: terreno/admin requiere un pin; comercio basta con tener comercio propio.
   const mostrarCard = esComercio ? comercioElegido !== null : seleccionado !== null;
@@ -267,6 +348,48 @@ export default function MapaComercios() {
               {comercios.length}
             </span>
             <span className="micro text-pac-tinta-suave">comercios</span>
+          </div>
+        </div>
+
+        <div className="pointer-events-auto absolute left-3 top-16 z-[500] w-[224px] border border-pac-linea bg-white p-3">
+          <p className="micro mb-2 text-pac-tinta-suave">
+            US-B3 · Filtro por distancia
+          </p>
+          <div className="flex flex-col gap-2">
+            <Boton
+              type="button"
+              variante="contorno"
+              tamano="sm"
+              bloque
+              onClick={usarMiUbicacion}
+              disabled={pidiendoUbicacion}
+            >
+              {pidiendoUbicacion ? "Ubicando…" : "Usar mi ubicación"}
+            </Boton>
+            <Campo etiqueta="Radio" para="radio-comercios">
+              <Selector
+                id="radio-comercios"
+                value={radio ?? ""}
+                onChange={(e) => cambiarRadio(e.target.value)}
+                disabled={!puntoUsuario}
+              >
+                <option value="">Todos los comercios</option>
+                <option value="500">500 m</option>
+                <option value="1000">1 km</option>
+                <option value="2000">2 km</option>
+                <option value="5000">5 km</option>
+              </Selector>
+            </Campo>
+            {puntoUsuario && radio !== null && (
+              <p className="text-[11px] leading-snug text-pac-tinta-suave">
+                {comercios.length} comercios a {etiquetaRadio} de tu ubicación.
+              </p>
+            )}
+            {errorUbicacion && (
+              <p className="text-[11px] leading-snug text-pac-rojo" role="alert">
+                {errorUbicacion}
+              </p>
+            )}
           </div>
         </div>
 
@@ -440,7 +563,8 @@ export default function MapaComercios() {
                       }
                     >
                       <span className="flex items-center gap-1.5">
-                        {mensaje === "Precio registrado." && (
+                        {(mensaje === "Precio registrado." ||
+                          mensaje === "Precio enviado a validación.") && (
                           <Check className="size-3.5" aria-hidden="true" />
                         )}
                         {mensaje}

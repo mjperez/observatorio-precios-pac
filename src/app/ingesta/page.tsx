@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, ClipboardList, Table2 } from "lucide-react";
+import { ArrowRight, ClipboardList, ScanLine, Table2 } from "lucide-react";
 import { requerirRol } from "@/lib/auth";
 import { Contenedor, EncabezadoPagina } from "@/components/ui/pagina";
 
@@ -19,6 +19,13 @@ const OPCIONES = [
     desc: "Sube la planilla semanal en CSV. Cada fila se valida antes de guardar y los errores se informan por número de línea.",
     icono: Table2,
     nota: "Carga masiva con informe de errores.",
+  },
+  {
+    nombre: "Lectura de boletas",
+    href: "/ingesta/ocr",
+    desc: "Fotografía una boleta, revisa los productos detectados por IA y confírmalos antes de guardar los precios.",
+    icono: ScanLine,
+    nota: "Requiere VISION_API_KEY y rol terreno o administrador.",
   },
 ];
 

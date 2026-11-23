@@ -43,6 +43,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  // El comparador solo muestra comercios con precio vigente. El total de
+  // comercios activos permite decir cuántos faltaron, sin confundir ausencia
+  // de precio con ausencia de venta (tarjeta «no vende / no relevado»).
+  const { count: totalComercios } = await supabase
+    .from("comercios")
+    .select("*", { count: "exact", head: true })
+    .eq("activo", true);
+
   const filas = (data ?? []) as FilaRpc[];
   const precios = ordenar(filas, params.orden);
   const primera = filas[0];
@@ -58,6 +66,7 @@ export async function GET(request: NextRequest) {
         }
       : null,
     resumen: resumir(filas),
+    total_comercios: totalComercios ?? 0,
     precios,
   });
 }
