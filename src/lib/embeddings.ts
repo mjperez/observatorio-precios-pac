@@ -57,6 +57,11 @@ export function tokenizar(texto: string): string[] {
   const expandidos = [...base];
   for (const token of base) {
     expandidos.push(...(SINONIMOS[token] ?? []));
+    // Plural español simple. Sin esto, "huevo" no encuentra "Huevos de gallina"
+    // ni "papa" encuentra "Papas": la búsqueda léxica depende de la forma exacta.
+    if (token.length > 3 && token.endsWith("s")) {
+      expandidos.push(token.slice(0, -1));
+    }
   }
   return [...new Set(expandidos)];
 }
