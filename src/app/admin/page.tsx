@@ -142,6 +142,16 @@ export default async function AdminPage() {
           Cada alta, modificación o baja queda registrada en la cadena de
           auditoría y no se puede alterar sin dejar rastro.
         </p>
+
+        <p className="mt-4 border-t border-pac-linea pt-4">
+          <Link
+            href="/admin/metricas"
+            className="inline-flex items-center gap-1.5 text-[12.5px] font-bold text-pac-azul underline decoration-pac-linea-fuerte underline-offset-4 transition-colors hover:text-pac-rojo"
+          >
+            Ver estadísticas comunales (US-F1)
+            <ArrowUpRight className="size-3.5" aria-hidden="true" />
+          </Link>
+        </p>
       </section>
     </Contenedor>
   );

@@ -1,7 +1,9 @@
+import Link from "next/link";
 import { requerirRol } from "@/lib/auth";
 import { Contenedor, EncabezadoPagina } from "@/components/ui/pagina";
 import { Aviso } from "@/components/ui/aviso";
 import { Boton } from "@/components/ui/boton";
+import { Insignia } from "@/components/ui/etiqueta";
 import { Panel, PanelCabecera } from "@/components/ui/panel";
 import {
   aprobarPrecio,
@@ -15,15 +17,16 @@ export const metadata = { title: "Validación de precios y ofertas" };
 export default async function ValidacionPage({
   searchParams,
 }: {
-  searchParams: Promise<{ caducidad?: string }>;
+  searchParams: Promise<{ caducidad?: string; anomalias?: string }>;
 }) {
   const { supabase } = await requerirRol("terreno", "administrador");
   const params = await searchParams;
+  const soloAnomalias = params.anomalias === "1";
 
   // Ejecución automática de desactivación de ofertas vencidas al abrir la bandeja
   const { data: ofertasCaducadas } = await supabase.rpc("fn_desactivar_ofertas_vencidas");
 
-  const { data: pendientes } = await supabase
+  let consulta = supabase
     .from("precios")
     .select(
       `
@@ -34,14 +37,26 @@ export default async function ValidacionPage({
       fecha_fin_vigencia,
       condiciones,
       origen,
+      es_anomalia,
+      detalle_anomalia,
       fecha_registro,
       comercios ( nombre, direccion ),
       productos ( nombre, marca, formato )
     `,
     )
-    .eq("estado_validacion", "pendiente")
+    .eq("estado_validacion", "pendiente");
+
+  if (soloAnomalias) consulta = consulta.eq("es_anomalia", true);
+
+  const { data: pendientes } = await consulta
     .order("fecha_registro", { ascending: false })
     .limit(100);
+
+  const { count: totalAnomalias } = await supabase
+    .from("precios")
+    .select("*", { count: "exact", head: true })
+    .eq("estado_validacion", "pendiente")
+    .eq("es_anomalia", true);
 
   const lista = pendientes ?? [];
 
@@ -57,7 +72,19 @@ export default async function ValidacionPage({
         titulo="Bandeja de validación"
         descripcion="Aprueba o rechaza precios y ofertas ingresados por comercios o planillas antes de su publicación ciudadana."
         acciones={
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href={
+                soloAnomalias
+                  ? "/admin/validacion"
+                  : "/admin/validacion?anomalias=1"
+              }
+              className="inline-flex h-10 items-center border border-pac-linea-fuerte px-4 text-[11px] font-bold uppercase tracking-[0.09em] text-pac-azul transition-colors hover:border-pac-azul hover:bg-pac-azul-tenue"
+            >
+              {soloAnomalias
+                ? "Ver todos los pendientes"
+                : `Solo anomalías (${totalAnomalias ?? 0})`}
+            </Link>
             <form action={ejecutarCaducidadOfertas}>
               <Boton type="submit">Desactivar ofertas vencidas</Boton>
             </form>
@@ -114,6 +141,11 @@ export default async function ValidacionPage({
                         <span className="border border-pac-linea bg-pac-fondo px-2 py-0.5 font-mono text-[11px] uppercase text-pac-tinta-suave">
                           Origen: {item.origen ?? "manual"}
                         </span>
+                        {item.es_anomalia && (
+                          <Insignia tono="destacado">
+                            Anomalía detectada
+                          </Insignia>
+                        )}
                       </div>
 
                       <p className="mt-1 text-[13px] text-pac-tinta">
@@ -143,6 +175,15 @@ export default async function ValidacionPage({
                       {item.condiciones && (
                         <p className="mt-1 text-[12px] text-pac-tinta-suave">
                           Condiciones: {item.condiciones}
+                        </p>
+                      )}
+
+                      {item.detalle_anomalia && (
+                        <p
+                          className="mt-2 border-l-[3px] border-l-pac-rojo bg-pac-rojo-tenue px-3 py-2 text-[12px] leading-snug text-pac-tinta"
+                          aria-label="Motivo de la alerta de anomalía"
+                        >
+                          {item.detalle_anomalia}
                         </p>
                       )}
                     </div>
