@@ -10,6 +10,8 @@ type Resultado = {
   marca: string;
   nombre: string;
   similitud: number;
+  puntaje: number;
+  origen: "vector" | "lexico" | "ambos";
 };
 
 type Respuesta = {
@@ -112,8 +114,11 @@ export function BusquedaSemantica({
                 className="flex w-full items-center justify-between gap-3 px-2.5 py-2 text-left hover:bg-pac-azul-tenue"
               >
                 <span className="text-[12.5px] text-pac-tinta">{producto.nombre}</span>
-                <span className="micro shrink-0 text-pac-tinta-suave">
-                  {(producto.similitud * 100).toFixed(0)}%
+                <span
+                  className="micro shrink-0 text-pac-tinta-suave"
+                  title={`Relevancia relativa (${producto.origen})`}
+                >
+                  {(producto.puntaje * 100).toFixed(0)}%
                 </span>
               </button>
             </li>
@@ -129,8 +134,9 @@ export function BusquedaSemantica({
 
       {respuesta?.degradado && (
         <p className="mt-2 text-[11px] leading-snug text-pac-tinta-suave">
-          Búsqueda léxica local: no hay proveedor de embeddings configurado o
-          los vectores aún no están cargados. {respuesta.tiempo_ms ?? 0} ms.
+          Sin vía vectorial: los vectores del catálogo no están cargados o el
+          proveedor no respondió. La búsqueda usa solo coincidencia de términos.{" "}
+          {respuesta.tiempo_ms ?? 0} ms.
         </p>
       )}
     </div>

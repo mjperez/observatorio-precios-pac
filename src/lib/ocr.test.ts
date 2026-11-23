@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   coincideProducto,
+  cuadreBoleta,
   extraerJson,
   normalizarNombreOCR,
   parsearMontoOCR,
@@ -61,5 +62,71 @@ describe("lector de boletas (US-C3)", () => {
   it("relaciona el nombre de la boleta con el catálogo", () => {
     expect(coincideProducto("Arroz grano largo 1 kg", "Arroz grano largo", "Belilla")).toBe(true);
     expect(coincideProducto("Arroz grano largo", "Detergente liquido", "Snap")).toBe(false);
+  });
+
+  it("extrae el subtotal impreso cuando viene en la respuesta", () => {
+    const resultado = validarBoletaOCR({
+      comercio: "Mi Club",
+      fecha: "2026-06-20",
+      subtotal: "38.930",
+      items: [{ nombre: "Pan", precio: 1290 }],
+    });
+    expect(resultado.ok && resultado.datos.subtotal).toBe(38930);
+  });
+
+  it("deja el subtotal en null cuando el modelo no lo devuelve", () => {
+    const resultado = validarBoletaOCR({
+      items: [{ nombre: "Pan", precio: 1290 }],
+    });
+    expect(resultado.ok && resultado.datos.subtotal).toBeNull();
+  });
+});
+
+describe("cuadre de la boleta (US-C3)", () => {
+  const base = { comercio: null, fecha: null };
+
+  it("marca correcto cuando la suma coincide con el subtotal", () => {
+    const cuadre = cuadreBoleta({
+      ...base,
+      subtotal: 38930,
+      items: [
+        { nombre: "Pan", precio: 38900, cantidad: 1 },
+        { nombre: "Sal", precio: 30, cantidad: 1 },
+      ],
+    });
+    expect(cuadre.suma).toBe(38930);
+    expect(cuadre.diferencia).toBe(0);
+    expect(cuadre.cuadra).toBe(true);
+  });
+
+  it("avisa cuando falta un artículo", () => {
+    // Caso real: la foto arrugada hizo omitir líneas y la suma quedó 484 pesos
+    // por debajo del subtotal impreso.
+    const cuadre = cuadreBoleta({
+      ...base,
+      subtotal: 38930,
+      items: [{ nombre: "Pan", precio: 38446, cantidad: 1 }],
+    });
+    expect(cuadre.diferencia).toBe(-484);
+    expect(cuadre.cuadra).toBe(false);
+  });
+
+  it("tolera menos de 100 pesos en una boleta pequeña", () => {
+    const cuadre = cuadreBoleta({
+      ...base,
+      subtotal: 1000,
+      items: [{ nombre: "Pan", precio: 940, cantidad: 1 }],
+    });
+    expect(cuadre.cuadra).toBe(true);
+  });
+
+  it("sin subtotal no hay nada que verificar", () => {
+    const cuadre = cuadreBoleta({
+      ...base,
+      subtotal: null,
+      items: [{ nombre: "Pan", precio: 1290, cantidad: 1 }],
+    });
+    expect(cuadre.cuadra).toBe(true);
+    expect(cuadre.subtotal).toBeNull();
   });
 });

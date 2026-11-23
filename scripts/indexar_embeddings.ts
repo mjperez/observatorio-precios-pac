@@ -6,11 +6,18 @@
  * Uso:
  *   npm run indexar               # solo los productos con embedding en NULL
  *   npm run indexar -- --forzar   # reindexa todo el catálogo
+ *   npm run indexar -- --detalle  # imprime el texto vectorizado de cada uno
+ *   npm run indexar -- --lexico   # acepta vectores léxicos si no hay proveedor
+ *
+ * El texto vectorizado incluye nombre, marca, formato, categoría y los alias
+ * de la categoría y del producto. Los alias están en la tabla `aliases` y son
+ * la forma en que un vecino nombra lo que el catálogo llama de otra manera.
  *
  * El vector se genera con el mismo módulo que usa /api/busqueda-semantica, de
  * modo que el espacio vectorial de la consulta y el del catálogo coinciden.
- * Con OPENAI_API_KEY se usa el proveedor externo; sin ella se usan vectores
- * léxicos, que aprovechan el índice HNSW pero no aportan significado.
+ * Con OPENAI_API_KEY se usa el proveedor externo. Sin ella el script se niega a
+ * escribir, porque producción vectoriza la consulta con el proveedor y mezclar
+ * ambos espacios arruinaría las similitudes.
  *
  * Credenciales: si existe SUPABASE_SERVICE_ROLE_KEY se usa esa. Si no, el
  * script inicia sesión con INDEXADOR_EMAIL e INDEXADOR_PASSWORD, que deben
@@ -21,20 +28,42 @@
 import { config } from "dotenv";
 import { createClient } from "@supabase/supabase-js";
 import { aLiteralVector, generarEmbedding } from "../src/lib/embeddings";
+import {
+  agruparAlias,
+  nombreDeCategoria,
+  textoProducto,
+  type FilaAlias,
+} from "../src/lib/texto_producto";
 
 config({ path: ".env.local" });
+// Variables bajadas con `vercel env pull`. Se cargan después para que no
+// sobrescriban lo que ya está definido en .env.local.
+config({ path: ".env.vercel" });
 
 const LOTE = 25;
 const forzar = process.argv.includes("--forzar");
+const aceptaLexico = process.argv.includes("--lexico");
+const detalle = process.argv.includes("--detalle");
 const esperaProveedor = Boolean(
   process.env.OPENAI_API_KEY ?? process.env.EMBEDDING_API_KEY,
 );
+
+if (!esperaProveedor && !aceptaLexico) {
+  console.error(
+    "No hay OPENAI_API_KEY ni EMBEDDING_API_KEY en el entorno.\n" +
+      "En producción la consulta se vectoriza con el proveedor externo, así que\n" +
+      "indexar con vectores léxicos mezclaría dos espacios y arruinaría las\n" +
+      "similitudes. Agrega la clave, o pasa --lexico si de verdad quieres ese modo.",
+  );
+  process.exit(1);
+}
 
 type FilaProducto = {
   id_producto: number;
   nombre: string;
   marca: string;
   formato: string;
+  id_categoria: number;
   categorias: { nombre: string } | { nombre: string }[] | null;
 };
 
@@ -45,11 +74,6 @@ function exigir(nombre: string): string {
     process.exit(1);
   }
   return valor;
-}
-
-function nombreCategoria(categorias: FilaProducto["categorias"]): string {
-  if (Array.isArray(categorias)) return categorias[0]?.nombre ?? "";
-  return categorias?.nombre ?? "";
 }
 
 async function main() {
@@ -75,7 +99,7 @@ async function main() {
 
   const consulta = supabase
     .from("productos")
-    .select("id_producto, nombre, marca, formato, categorias(nombre)")
+    .select("id_producto, nombre, marca, formato, id_categoria, categorias(nombre)")
     .eq("activo", true)
     .order("id_producto");
 
@@ -92,7 +116,20 @@ async function main() {
     return;
   }
 
-  console.log(`${productos.length} productos por indexar.`);
+  const { data: alias, error: errorAlias } = await supabase
+    .from("aliases")
+    .select("alias, id_categoria, id_producto");
+
+  if (errorAlias) {
+    console.error("No se pudieron leer los alias:", errorAlias.message);
+    process.exit(1);
+  }
+
+  const mapasAlias = agruparAlias((alias ?? []) as FilaAlias[]);
+
+  console.log(
+    `${productos.length} productos por indexar. Alias: ${mapasAlias.porCategoria.size} categorías, ${mapasAlias.porProducto.size} productos.`,
+  );
 
   let indexados = 0;
   let fallidos = 0;
@@ -102,14 +139,18 @@ async function main() {
     const lote = productos.slice(i, i + LOTE);
 
     for (const producto of lote) {
-      const texto = [
-        producto.nombre,
-        producto.marca,
-        producto.formato,
-        nombreCategoria(producto.categorias),
-      ]
-        .filter(Boolean)
-        .join(" ");
+      const texto = textoProducto(
+        {
+          id_producto: producto.id_producto,
+          id_categoria: producto.id_categoria,
+          nombre: producto.nombre,
+          marca: producto.marca,
+          formato: producto.formato,
+          categoria: nombreDeCategoria(producto.categorias),
+        },
+        mapasAlias,
+      );
+      if (detalle) console.log(`  [${producto.id_producto}] ${texto}`);
 
       try {
         const embedding = await generarEmbedding(texto);

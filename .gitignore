@@ -53,3 +53,6 @@ supabase/.branches
 
 # respaldos locales
 /respaldo_*.sql
+
+.vercel
+.env*

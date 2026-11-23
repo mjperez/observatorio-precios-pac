@@ -86,7 +86,7 @@ export default async function ProductosPage({
                     id="nombre"
                     name="nombre"
                     required
-                    placeholder="Pan corriente (marraqueta)"
+                    placeholder="Marraqueta"
                   />
                 </Campo>
 
