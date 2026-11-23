@@ -6,17 +6,10 @@ import {
   generarEmbedding,
   similitudCoseno,
 } from "@/lib/embeddings";
-
-type ProductoResultado = {
-  formato: string;
-  id_producto: number;
-  marca: string;
-  nombre: string;
-  similitud: number;
-};
+import { fusionarRangos, type Candidato, type Fusionado } from "@/lib/hibrida";
 
 type Respuesta = {
-  productos: ProductoResultado[];
+  productos: Fusionado[];
   proveedor: "openai" | "local";
   degradado: boolean;
   tiempo_ms: number;
@@ -43,30 +36,32 @@ export async function GET(request: NextRequest) {
     { consulta: aLiteralVector(embedding.vector), limite },
   );
 
-  if (!errorRpc && Array.isArray(rpc) && rpc.length > 0) {
-    const respuesta: Respuesta = {
-      productos: rpc.map((fila) => ({
-        formato: fila.formato,
-        id_producto: fila.id_producto,
-        marca: fila.marca,
-        nombre: fila.nombre,
-        similitud: Number(fila.similitud.toFixed(4)),
-      })),
-      proveedor: embedding.proveedor,
-      degradado: embedding.degradado,
-      tiempo_ms: Math.round(performance.now() - inicio),
-    };
-    return NextResponse.json(respuesta);
-  }
+  const vectoriales: Candidato[] = (errorRpc || !Array.isArray(rpc) ? [] : rpc).map(
+    (fila: {
+      formato: string;
+      id_producto: number;
+      marca: string;
+      nombre: string;
+      similitud: number;
+    }) => ({
+      formato: fila.formato,
+      id_producto: fila.id_producto,
+      marca: fila.marca,
+      nombre: fila.nombre,
+      similitud: Number(fila.similitud.toFixed(4)),
+    }),
+  );
 
-  // Sin la migración aplicada o sin vectores cargados, se calcula la
-  // similitud sobre el catálogo activo. El modo queda marcado en la respuesta.
+  // La vía léxica se calcula siempre, no solo cuando falla la vectorial: aporta
+  // las consultas indirectas que el vector no relaciona, como "cazuela" con
+  // papas. Sus vectores se generan aquí porque los de la columna pueden venir
+  // de otro proveedor y no serían comparables.
   const { data: catalogo, error: errorCatalogo } = await supabase
     .from("productos")
     .select("id_producto, nombre, marca, formato, categorias(nombre)")
     .eq("activo", true);
 
-  if (errorCatalogo) {
+  if (errorCatalogo && vectoriales.length === 0) {
     console.error("[busqueda-semantica] Error leyendo catálogo:", errorCatalogo);
     return NextResponse.json(
       { error: "No se pudo realizar la búsqueda. Intenta nuevamente." },
@@ -74,10 +69,9 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const vectorConsulta =
-    embedding.proveedor === "local" ? embedding.vector : embeddingLocal(consulta);
+  const vectorConsulta = embeddingLocal(consulta);
 
-  const productos: ProductoResultado[] = (catalogo ?? [])
+  const lexicos: Candidato[] = (catalogo ?? [])
     .map((producto) => {
       const categoria = Array.isArray(producto.categorias)
         ? producto.categorias[0]?.nombre
@@ -96,9 +90,9 @@ export async function GET(request: NextRequest) {
     .slice(0, limite);
 
   const respuesta: Respuesta = {
-    productos,
+    productos: fusionarRangos(vectoriales, lexicos, limite),
     proveedor: embedding.proveedor,
-    degradado: true,
+    degradado: vectoriales.length === 0 || embedding.degradado,
     tiempo_ms: Math.round(performance.now() - inicio),
   };
   return NextResponse.json(respuesta);
