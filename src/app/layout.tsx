@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Roboto, Roboto_Slab } from "next/font/google";
 import { AuthProvider } from "@/components/auth_provider";
+import ChatbotPac from "@/components/chatbot_pac";
 import "./globals.css";
 
 const roboto = Roboto({
@@ -47,6 +48,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           Saltar al contenido
         </a>
         <AuthProvider>{children}</AuthProvider>
+        <ChatbotPac />
       </body>
     </html>
   );

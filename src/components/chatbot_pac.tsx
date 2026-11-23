@@ -39,6 +39,12 @@ const MENSAJE_BIENVENIDA: MensajeUI = {
     "Hola. Soy el asistente del Observatorio de Precios PAC. Puedes consultarme por precios de productos en almacenes y supermercados de Pedro Aguirre Cerda, ofertas vigentes o cómo usar el portal.",
 };
 
+let consecutivoMensajes = 0;
+function idMensaje(prefijo: string): string {
+  consecutivoMensajes += 1;
+  return `${prefijo}-${consecutivoMensajes}`;
+}
+
 function formatearCifraCLP(monto: number): string {
   const redondeado = Math.round(monto);
   return `$${Math.abs(redondeado)
@@ -81,7 +87,7 @@ export function ChatbotPac() {
     if (!limpio || cargando) return;
 
     const nuevoMensajeUsuario: MensajeUI = {
-      id: `user-${Date.now()}`,
+      id: idMensaje("user"),
       role: "user",
       content: limpio.slice(0, 600),
     };
@@ -117,7 +123,7 @@ export function ChatbotPac() {
         setMensajes((prev) => [
           ...prev,
           {
-            id: `err-${Date.now()}`,
+            id: idMensaje("err"),
             role: "assistant",
             content:
               datos.error ||
@@ -131,7 +137,7 @@ export function ChatbotPac() {
       setMensajes((prev) => [
         ...prev,
         {
-          id: `bot-${Date.now()}`,
+          id: idMensaje("bot"),
           role: "assistant",
           content: datos.reply as string,
           fuentes: Array.isArray(datos.fuentes) ? datos.fuentes : undefined,
@@ -141,7 +147,7 @@ export function ChatbotPac() {
       setMensajes((prev) => [
         ...prev,
         {
-          id: `err-${Date.now()}`,
+          id: idMensaje("err"),
           role: "assistant",
           content:
             "Error de red al conectar con el Observatorio PAC. Verifica tu conexión e intenta de nuevo.",

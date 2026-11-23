@@ -11,6 +11,7 @@ import { Contenedor, EncabezadoPagina, EstadoVacio } from "@/components/ui/pagin
 import { Etiqueta, Insignia } from "@/components/ui/etiqueta";
 import { Panel } from "@/components/ui/panel";
 import { HistorialPrecios } from "@/components/historial_precios";
+import { BusquedaSemantica } from "@/components/busqueda_semantica";
 import {
   formatearDistancia,
   type FilaComparador,
@@ -198,6 +199,13 @@ export default function Comparador() {
           <div className="grid gap-6 py-8 lg:grid-cols-[320px_1fr] lg:items-start">
             {/* Catálogo */}
             <Panel className="lg:sticky lg:top-24">
+              <BusquedaSemantica
+                onSeleccionar={(producto) => {
+                  setSeleccion(producto);
+                  setBusqueda("");
+                  setError(null);
+                }}
+              />
               <div className="border-b border-pac-linea p-3">
                 <div className="relative">
                   <Search
