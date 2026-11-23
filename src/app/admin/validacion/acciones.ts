@@ -1,98 +1,98 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { requerirRol } from "@/lib/auth";
 
-const RUTA = "/admin/validacion";
-
-function refrescarPublicaciones() {
-  revalidatePath(RUTA);
-  revalidatePath("/admin");
-  revalidatePath("/comparador");
-  revalidatePath("/mapa");
+function auditoria(perfilId: string) {
+  return {
+    validado_por: perfilId,
+    fecha_validacion: new Date().toISOString(),
+  };
 }
 
-function idDe(formData: FormData) {
-  const id = Number(formData.get("id_precio"));
-  return Number.isInteger(id) && id > 0 ? id : null;
+function refrescar() {
+  revalidatePath("/admin");
+  revalidatePath("/admin/validacion");
 }
 
 export async function aprobarPrecio(formData: FormData) {
   const { supabase, perfil } = await requerirRol("terreno", "administrador");
-  const idPrecio = idDe(formData);
+  const idPrecio = Number(formData.get("id_precio"));
 
-  if (!idPrecio) redirect(`${RUTA}?error=datos`);
+  if (!Number.isInteger(idPrecio) || idPrecio <= 0) return;
 
   const { error } = await supabase
     .from("precios")
     .update({
       estado_validacion: "aprobado",
       validado: true,
-      validado_por: perfil?.id_usuario ?? null,
-      fecha_validacion: new Date().toISOString(),
       motivo_rechazo: null,
+      ...auditoria(perfil.id_usuario),
     })
-    .eq("id_precio", idPrecio)
-    .eq("estado_validacion", "pendiente");
+    .eq("id_precio", idPrecio);
 
-  if (error) redirect(`${RUTA}?error=aprobacion`);
-
-  refrescarPublicaciones();
-  redirect(`${RUTA}?ok=aprobado`);
+  if (error) console.error("[admin/validacion] Error aprobando precio:", error);
+  refrescar();
 }
 
 export async function rechazarPrecio(formData: FormData) {
   const { supabase, perfil } = await requerirRol("terreno", "administrador");
-  const idPrecio = idDe(formData);
+  const idPrecio = Number(formData.get("id_precio"));
   const motivo = String(formData.get("motivo") ?? "").trim();
 
-  if (!idPrecio || motivo.length < 4) redirect(`${RUTA}?error=datos`);
+  if (!Number.isInteger(idPrecio) || idPrecio <= 0) return;
 
   const { error } = await supabase
     .from("precios")
     .update({
       estado_validacion: "rechazado",
       validado: false,
-      validado_por: perfil?.id_usuario ?? null,
-      fecha_validacion: new Date().toISOString(),
-      motivo_rechazo: motivo.slice(0, 300),
+      motivo_rechazo: motivo || null,
+      ...auditoria(perfil.id_usuario),
     })
-    .eq("id_precio", idPrecio)
-    .eq("estado_validacion", "pendiente");
+    .eq("id_precio", idPrecio);
 
-  if (error) redirect(`${RUTA}?error=rechazo`);
-
-  refrescarPublicaciones();
-  redirect(`${RUTA}?ok=rechazado`);
+  if (error) console.error("[admin/validacion] Error rechazando precio:", error);
+  refrescar();
 }
 
 export async function aprobarTodosPendientes() {
   const { supabase, perfil } = await requerirRol("terreno", "administrador");
+
+  const { data: pendientes, error: errorLectura } = await supabase
+    .from("precios")
+    .select("id_precio")
+    .eq("estado_validacion", "pendiente");
+
+  if (errorLectura) {
+    console.error("[admin/validacion] Error leyendo pendientes:", errorLectura);
+    return;
+  }
+
+  const ids = (pendientes ?? []).map((fila) => fila.id_precio);
+  if (ids.length === 0) return;
 
   const { error } = await supabase
     .from("precios")
     .update({
       estado_validacion: "aprobado",
       validado: true,
-      validado_por: perfil?.id_usuario ?? null,
-      fecha_validacion: new Date().toISOString(),
       motivo_rechazo: null,
+      ...auditoria(perfil.id_usuario),
     })
-    .eq("estado_validacion", "pendiente");
+    .in("id_precio", ids);
 
-  if (error) redirect(`${RUTA}?error=aprobacion-masiva`);
-
-  refrescarPublicaciones();
-  redirect(`${RUTA}?ok=aprobacion-masiva`);
+  if (error) console.error("[admin/validacion] Error aprobando pendientes:", error);
+  refrescar();
 }
 
 export async function ejecutarCaducidadOfertas() {
   const { supabase } = await requerirRol("terreno", "administrador");
 
   const { error } = await supabase.rpc("fn_desactivar_ofertas_vencidas");
-  if (error) redirect(`${RUTA}?error=caducidad`);
 
-  refrescarPublicaciones();
-  redirect(`${RUTA}?caducidad=ok`);
+  if (error) {
+    console.error("[admin/validacion] Error desactivando ofertas vencidas:", error);
+  }
+  refrescar();
 }
