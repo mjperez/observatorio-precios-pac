@@ -6,11 +6,13 @@
  * Uso:
  *   npm run indexar               # solo los productos con embedding en NULL
  *   npm run indexar -- --forzar   # reindexa todo el catálogo
+ *   npm run indexar -- --lexico   # acepta vectores léxicos si no hay proveedor
  *
  * El vector se genera con el mismo módulo que usa /api/busqueda-semantica, de
  * modo que el espacio vectorial de la consulta y el del catálogo coinciden.
- * Con OPENAI_API_KEY se usa el proveedor externo; sin ella se usan vectores
- * léxicos, que aprovechan el índice HNSW pero no aportan significado.
+ * Con OPENAI_API_KEY se usa el proveedor externo. Sin ella el script se niega a
+ * escribir, porque producción vectoriza la consulta con el proveedor y mezclar
+ * ambos espacios arruinaría las similitudes.
  *
  * Credenciales: si existe SUPABASE_SERVICE_ROLE_KEY se usa esa. Si no, el
  * script inicia sesión con INDEXADOR_EMAIL e INDEXADOR_PASSWORD, que deben
@@ -23,12 +25,26 @@ import { createClient } from "@supabase/supabase-js";
 import { aLiteralVector, generarEmbedding } from "../src/lib/embeddings";
 
 config({ path: ".env.local" });
+// Variables bajadas con `vercel env pull`. Se cargan después para que no
+// sobrescriban lo que ya está definido en .env.local.
+config({ path: ".env.vercel" });
 
 const LOTE = 25;
 const forzar = process.argv.includes("--forzar");
+const aceptaLexico = process.argv.includes("--lexico");
 const esperaProveedor = Boolean(
   process.env.OPENAI_API_KEY ?? process.env.EMBEDDING_API_KEY,
 );
+
+if (!esperaProveedor && !aceptaLexico) {
+  console.error(
+    "No hay OPENAI_API_KEY ni EMBEDDING_API_KEY en el entorno.\n" +
+      "En producción la consulta se vectoriza con el proveedor externo, así que\n" +
+      "indexar con vectores léxicos mezclaría dos espacios y arruinaría las\n" +
+      "similitudes. Agrega la clave, o pasa --lexico si de verdad quieres ese modo.",
+  );
+  process.exit(1);
+}
 
 type FilaProducto = {
   id_producto: number;
