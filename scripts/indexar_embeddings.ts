@@ -6,7 +6,12 @@
  * Uso:
  *   npm run indexar               # solo los productos con embedding en NULL
  *   npm run indexar -- --forzar   # reindexa todo el catálogo
+ *   npm run indexar -- --detalle  # imprime el texto vectorizado de cada uno
  *   npm run indexar -- --lexico   # acepta vectores léxicos si no hay proveedor
+ *
+ * El texto vectorizado incluye nombre, marca, formato, categoría y los alias
+ * de la categoría y del producto. Los alias están en la tabla `aliases` y son
+ * la forma en que un vecino nombra lo que el catálogo llama de otra manera.
  *
  * El vector se genera con el mismo módulo que usa /api/busqueda-semantica, de
  * modo que el espacio vectorial de la consulta y el del catálogo coinciden.
@@ -32,6 +37,7 @@ config({ path: ".env.vercel" });
 const LOTE = 25;
 const forzar = process.argv.includes("--forzar");
 const aceptaLexico = process.argv.includes("--lexico");
+const detalle = process.argv.includes("--detalle");
 const esperaProveedor = Boolean(
   process.env.OPENAI_API_KEY ?? process.env.EMBEDDING_API_KEY,
 );
@@ -51,7 +57,14 @@ type FilaProducto = {
   nombre: string;
   marca: string;
   formato: string;
+  id_categoria: number;
   categorias: { nombre: string } | { nombre: string }[] | null;
+};
+
+type FilaAlias = {
+  alias: string;
+  id_categoria: number | null;
+  id_producto: number | null;
 };
 
 function exigir(nombre: string): string {
@@ -66,6 +79,32 @@ function exigir(nombre: string): string {
 function nombreCategoria(categorias: FilaProducto["categorias"]): string {
   if (Array.isArray(categorias)) return categorias[0]?.nombre ?? "";
   return categorias?.nombre ?? "";
+}
+
+/**
+ * Texto que se vectoriza. Los alias entran porque la tabla existe justamente
+ * para que un vecino encuentre "marraqueta" cuando el catálogo dice "pan
+ * corriente", y porque aportan la forma singular que la tokenización no deriva:
+ * el alias "papa" sí coincide con la expansión de "cazuela", "Papas" no.
+ */
+function textoIndexado(
+  producto: FilaProducto,
+  aliasPorCategoria: Map<number, string[]>,
+  aliasPorProducto: Map<number, string[]>,
+): string {
+  const terminos = new Set<string>([
+    producto.nombre,
+    producto.marca,
+    producto.formato,
+    nombreCategoria(producto.categorias),
+    ...(aliasPorCategoria.get(producto.id_categoria) ?? []),
+    ...(aliasPorProducto.get(producto.id_producto) ?? []),
+  ]);
+
+  return [...terminos]
+    .map((termino) => termino.trim())
+    .filter(Boolean)
+    .join(" ");
 }
 
 async function main() {
@@ -91,7 +130,7 @@ async function main() {
 
   const consulta = supabase
     .from("productos")
-    .select("id_producto, nombre, marca, formato, categorias(nombre)")
+    .select("id_producto, nombre, marca, formato, id_categoria, categorias(nombre)")
     .eq("activo", true)
     .order("id_producto");
 
@@ -108,7 +147,38 @@ async function main() {
     return;
   }
 
-  console.log(`${productos.length} productos por indexar.`);
+  const { data: alias, error: errorAlias } = await supabase
+    .from("aliases")
+    .select("alias, id_categoria, id_producto");
+
+  if (errorAlias) {
+    console.error("No se pudieron leer los alias:", errorAlias.message);
+    process.exit(1);
+  }
+
+  const aliasPorCategoria = new Map<number, string[]>();
+  const aliasPorProducto = new Map<number, string[]>();
+
+  for (const fila of (alias ?? []) as FilaAlias[]) {
+    const termino = fila.alias?.trim();
+    if (!termino) continue;
+
+    if (fila.id_categoria !== null) {
+      aliasPorCategoria.set(fila.id_categoria, [
+        ...(aliasPorCategoria.get(fila.id_categoria) ?? []),
+        termino,
+      ]);
+    } else if (fila.id_producto !== null) {
+      aliasPorProducto.set(fila.id_producto, [
+        ...(aliasPorProducto.get(fila.id_producto) ?? []),
+        termino,
+      ]);
+    }
+  }
+
+  console.log(
+    `${productos.length} productos por indexar. Alias: ${aliasPorCategoria.size} categorías, ${aliasPorProducto.size} productos.`,
+  );
 
   let indexados = 0;
   let fallidos = 0;
@@ -118,14 +188,8 @@ async function main() {
     const lote = productos.slice(i, i + LOTE);
 
     for (const producto of lote) {
-      const texto = [
-        producto.nombre,
-        producto.marca,
-        producto.formato,
-        nombreCategoria(producto.categorias),
-      ]
-        .filter(Boolean)
-        .join(" ");
+      const texto = textoIndexado(producto, aliasPorCategoria, aliasPorProducto);
+      if (detalle) console.log(`  [${producto.id_producto}] ${texto}`);
 
       try {
         const embedding = await generarEmbedding(texto);
