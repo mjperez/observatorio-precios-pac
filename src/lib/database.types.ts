@@ -196,37 +196,70 @@ export type Database = {
       }
       precios: {
         Row: {
+          condiciones: string | null
+          detalle_anomalia: string | null
+          es_anomalia: boolean
+          estado_validacion: string
+          fecha_fin_vigencia: string | null
+          fecha_inicio_vigencia: string | null
           fecha_registro: string
+          fecha_validacion: string | null
           id_boleta: string | null
           id_comercio: number
           id_precio: number
           id_producto: number
+          motivo_rechazo: string | null
+          oferta_activa: boolean
           origen: string
+          precio_oferta: number | null
           validado: boolean
+          validado_por: string | null
           valor: number
           vigente_desde: string
           vigente_hasta: string | null
         }
         Insert: {
+          condiciones?: string | null
+          detalle_anomalia?: string | null
+          es_anomalia?: boolean
+          estado_validacion?: string
+          fecha_fin_vigencia?: string | null
+          fecha_inicio_vigencia?: string | null
           fecha_registro?: string
+          fecha_validacion?: string | null
           id_boleta?: string | null
           id_comercio: number
           id_precio?: never
           id_producto: number
+          motivo_rechazo?: string | null
+          oferta_activa?: boolean
           origen?: string
+          precio_oferta?: number | null
           validado?: boolean
+          validado_por?: string | null
           valor: number
           vigente_desde?: string
           vigente_hasta?: string | null
         }
         Update: {
+          condiciones?: string | null
+          detalle_anomalia?: string | null
+          es_anomalia?: boolean
+          estado_validacion?: string
+          fecha_fin_vigencia?: string | null
+          fecha_inicio_vigencia?: string | null
           fecha_registro?: string
+          fecha_validacion?: string | null
           id_boleta?: string | null
           id_comercio?: number
           id_precio?: never
           id_producto?: number
+          motivo_rechazo?: string | null
+          oferta_activa?: boolean
           origen?: string
+          precio_oferta?: number | null
           validado?: boolean
+          validado_por?: string | null
           valor?: number
           vigente_desde?: string
           vigente_hasta?: string | null
@@ -266,6 +299,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "productos"
             referencedColumns: ["id_producto"]
+          },
+          {
+            foreignKeyName: "precios_validado_por_fkey"
+            columns: ["validado_por"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id_usuario"]
           },
         ]
       }
@@ -827,15 +867,33 @@ export type Database = {
         | { Args: { table_name: string }; Returns: string }
       enablelongtransactions: { Args: never; Returns: string }
       equals: { Args: { geom1: unknown; geom2: unknown }; Returns: boolean }
+      fn_comercios_en_radio: {
+        Args: { p_lat: number; p_lng: number; p_radio_metros: number }
+        Returns: {
+          direccion: string
+          distancia_metros: number
+          id_comercio: number
+          lat: number
+          lng: number
+          nombre: string
+          tipo: string
+        }[]
+      }
       fn_comparador: {
         Args: { p_lat?: number; p_lng?: number; p_producto: number }
         Returns: {
           comercio: string
+          condiciones: string
           direccion: string
           distancia_m: number
+          fecha_fin_vigencia: string
+          fecha_inicio_vigencia: string
           fecha_registro: string
           id_comercio: number
+          matriz_nombre: string
+          oferta_vigente: boolean
           origen: string
+          precio_oferta: number
           ref_lat: number
           ref_lng: number
           ref_origen: string
@@ -843,6 +901,7 @@ export type Database = {
           valor: number
         }[]
       }
+      fn_desactivar_ofertas_vencidas: { Args: never; Returns: number }
       fn_payload_auditoria: {
         Args: {
           p_accion: string

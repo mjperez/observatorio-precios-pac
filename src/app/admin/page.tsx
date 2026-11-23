@@ -16,18 +16,42 @@ export const metadata = { title: "Panel de mantenedores" };
 export default async function AdminPage() {
   const supabase = await createClient();
 
-  const [categorias, productos, comercios, aliases, auditoria] =
-    await Promise.all([
-      supabase.from("categorias").select("*", { count: "exact", head: true }),
-      supabase.from("productos").select("*", { count: "exact", head: true }),
-      supabase.from("comercios").select("*", { count: "exact", head: true }),
-      supabase.from("aliases").select("*", { count: "exact", head: true }),
-      supabase
-        .from("registros_auditoria")
-        .select("*", { count: "exact", head: true }),
-    ]);
+  const [
+    pendientes,
+    usuarios,
+    categorias,
+    productos,
+    comercios,
+    aliases,
+    auditoria,
+  ] = await Promise.all([
+    supabase
+      .from("precios")
+      .select("*", { count: "exact", head: true })
+      .eq("estado_validacion", "pendiente"),
+    supabase.from("usuarios").select("*", { count: "exact", head: true }),
+    supabase.from("categorias").select("*", { count: "exact", head: true }),
+    supabase.from("productos").select("*", { count: "exact", head: true }),
+    supabase.from("comercios").select("*", { count: "exact", head: true }),
+    supabase.from("aliases").select("*", { count: "exact", head: true }),
+    supabase
+      .from("registros_auditoria")
+      .select("*", { count: "exact", head: true }),
+  ]);
 
   const modulos: Modulo[] = [
+    {
+      nombre: "Validación",
+      total: pendientes.count ?? 0,
+      desc: "Precios y ofertas pendientes de aprobación antes de su publicación.",
+      href: "/admin/validacion",
+    },
+    {
+      nombre: "Usuarios",
+      total: usuarios.count ?? 0,
+      desc: "Asignación de roles operativos y vinculación de comercios.",
+      href: "/admin/usuarios",
+    },
     {
       nombre: "Productos",
       total: productos.count ?? 0,
@@ -71,7 +95,7 @@ export default async function AdminPage() {
 
       <section
         aria-label="Indicadores"
-        className="mt-8 grid grid-cols-2 gap-px border border-pac-linea bg-pac-linea sm:grid-cols-3 lg:grid-cols-5"
+        className="mt-8 grid grid-cols-2 gap-px border border-pac-linea bg-pac-linea sm:grid-cols-4 lg:grid-cols-7"
       >
         {modulos.map((m) => (
           <div key={m.nombre} className="bg-white px-4 py-4">
@@ -117,6 +141,16 @@ export default async function AdminPage() {
         <p className="mt-3 text-[12px] leading-relaxed text-pac-tinta-suave">
           Cada alta, modificación o baja queda registrada en la cadena de
           auditoría y no se puede alterar sin dejar rastro.
+        </p>
+
+        <p className="mt-4 border-t border-pac-linea pt-4">
+          <Link
+            href="/admin/metricas"
+            className="inline-flex items-center gap-1.5 text-[12.5px] font-bold text-pac-azul underline decoration-pac-linea-fuerte underline-offset-4 transition-colors hover:text-pac-rojo"
+          >
+            Ver estadísticas comunales (US-F1)
+            <ArrowUpRight className="size-3.5" aria-hidden="true" />
+          </Link>
         </p>
       </section>
     </Contenedor>

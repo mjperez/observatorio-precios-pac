@@ -3,11 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/utils/supabase/server";
 import { parseCsv, parsearPrecio } from "@/lib/csv";
+import { obtenerFechaHoyChile, validarOferta } from "@/lib/validacion_fechas";
 
 const ROLES_INGESTA = ["comercio", "terreno", "administrador"];
-// 900 KB y no 1 MB: el límite por defecto del cuerpo de una Server Action en
-// Next es 1 MB, y el multipart pesa algo más que el archivo. Con 900 KB el
-// rechazo lo da este código, con un mensaje claro, antes que el framework.
 const TAMANO_MAXIMO = 900_000;
 const FILAS_MAXIMAS = 500;
 const COLUMNAS = ["nombre", "marca", "formato", "precio"];
@@ -25,9 +23,6 @@ function fallo(mensaje: string): ResultadoCarga {
   return { ok: false, insertadas: 0, errores: [], mensaje };
 }
 
-// Todas las filas se validan antes de escribir. Si una sola falla no se inserta
-// nada: la planilla se corrige y se vuelve a subir completa, así no quedan
-// cargas a medias ni precios duplicados por reintentos.
 export async function cargarCsv(
   _estado: ResultadoCarga | null,
   formData: FormData,
@@ -63,8 +58,6 @@ export async function cargarCsv(
     return fallo("Selecciona un comercio.");
   }
 
-  // Un usuario con rol comercio solo puede cargar sobre sus propios locales.
-  // La política RLS lo exige igual, pero el aviso temprano es más claro.
   if (rol === "comercio") {
     const { data: vinculo } = await supabase
       .from("usuarios_comercios")
@@ -92,11 +85,19 @@ export async function cargarCsv(
     );
   }
 
+  const idxOferta = cabecera.indexOf("precio_oferta");
+  const idxInicio = cabecera.indexOf("fecha_inicio_vigencia");
+  const idxFin = cabecera.indexOf("fecha_fin_vigencia");
+  const idxCondiciones = cabecera.indexOf("condiciones");
+
   const { data: productos, error: errorCatalogo } = await supabase
     .from("productos")
     .select("id_producto, nombre, marca, formato, activo");
 
-  if (errorCatalogo) return fallo(`No se pudo leer el catálogo: ${errorCatalogo.message}`);
+  if (errorCatalogo) {
+    console.error("[ingesta/csv] Error leyendo catálogo:", errorCatalogo);
+    return fallo("No se pudo validar el catálogo de productos. Intenta nuevamente.");
+  }
 
   const clave = (nombre: string, marca: string, formato: string) =>
     `${nombre.trim().toLowerCase()}|${marca.trim().toLowerCase()}|${formato.trim().toLowerCase()}`;
@@ -105,13 +106,19 @@ export async function cargarCsv(
     (productos ?? []).map((p) => [clave(p.nombre, p.marca, p.formato), p]),
   );
 
+  const hoyChile = obtenerFechaHoyChile();
   const errores: ErrorFila[] = [];
   const insertables: {
     id_producto: number;
     id_comercio: number;
     valor: number;
+    precio_oferta: number | null;
+    fecha_inicio_vigencia: string;
+    fecha_fin_vigencia: string | null;
+    condiciones: string | null;
     origen: string;
     validado: boolean;
+    estado_validacion: string;
   }[] = [];
   const vistos = new Map<number, number>();
 
@@ -163,12 +170,60 @@ export async function cargarCsv(
     }
     vistos.set(producto.id_producto, linea);
 
+    const ofertaRaw = idxOferta !== -1 ? (fila[idxOferta] ?? "").trim() : "";
+    let precioOferta: number | null = null;
+    if (ofertaRaw !== "") {
+      precioOferta = parsearPrecio(ofertaRaw);
+      if (precioOferta === null) {
+        errores.push({
+          linea,
+          mensaje: `precio_oferta inválido ("${ofertaRaw}"): usa formato numérico sin separador de miles`,
+        });
+        continue;
+      }
+    }
+
+    const inicioRaw = idxInicio !== -1 ? (fila[idxInicio] ?? "").trim() || null : null;
+    const finRaw = idxFin !== -1 ? (fila[idxFin] ?? "").trim() || null : null;
+    const condRaw = idxCondiciones !== -1 ? (fila[idxCondiciones] ?? "").trim() || null : null;
+
+    // Si hay oferta en CSV y no se especificó inicio, asume la fecha actual en Chile
+    const inicioEfectivo =
+      precioOferta !== null && inicioRaw === null ? hoyChile : inicioRaw;
+
+    const validacion = validarOferta(
+      {
+        valor,
+        precio_oferta: precioOferta,
+        fecha_inicio_vigencia: inicioEfectivo,
+        fecha_fin_vigencia: finRaw,
+        condiciones: condRaw,
+      },
+      {
+        requerirFechasVigencia: true,
+        rechazarOfertaVencida: true,
+        fechaReferencia: hoyChile,
+      },
+    );
+
+    if (!validacion.ok) {
+      for (const err of validacion.errores) {
+        errores.push({ linea, mensaje: err.mensaje });
+      }
+      continue;
+    }
+
     insertables.push({
       id_producto: producto.id_producto,
       id_comercio: idComercio,
       valor,
+      precio_oferta: validacion.datos.precio_oferta,
+      fecha_inicio_vigencia: validacion.datos.fecha_inicio_vigencia ?? hoyChile,
+      fecha_fin_vigencia: validacion.datos.fecha_fin_vigencia,
+      condiciones: validacion.datos.condiciones,
       origen: "csv",
-      validado: true,
+      validado: false,
+      estado_validacion: "pendiente",
     });
   }
 
@@ -188,16 +243,18 @@ export async function cargarCsv(
   const { error: errorInsercion } = await supabase.from("precios").insert(insertables);
 
   if (errorInsercion) {
-    return fallo(`No se pudo guardar: ${errorInsercion.message}`);
+    console.error("[ingesta/csv] Error insertando precios:", errorInsercion);
+    return fallo("No se pudieron registrar los precios. Verifica tus permisos o intenta más tarde.");
   }
 
   revalidatePath("/admin");
+  revalidatePath("/admin/validacion");
   revalidatePath("/ingesta/csv");
 
   return {
     ok: true,
     insertadas: insertables.length,
     errores: [],
-    mensaje: `Se cargaron ${insertables.length} precios.`,
+    mensaje: `Se cargaron ${insertables.length} precios en estado pendiente de validación.`,
   };
 }
