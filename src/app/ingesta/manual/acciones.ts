@@ -3,9 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/utils/supabase/server";
 import { parsearPrecio } from "@/lib/csv";
+import { obtenerFechaHoyChile, validarOferta } from "@/lib/validacion_fechas";
 
 const ROLES_INGESTA = ["comercio", "terreno", "administrador"];
-const FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/;
 
 export type ResultadoManual = {
   ok: boolean;
@@ -72,50 +72,47 @@ export async function registrarPrecioManual(
     if (precioOferta === null) {
       return { ok: false, mensaje: "Precio oferta inválido." };
     }
-    if (precioOferta >= valor) {
-      return {
-        ok: false,
-        mensaje: "El precio de oferta debe ser estrictamente menor al precio normal.",
-      };
-    }
   }
 
   const fechaInicio = String(formData.get("fecha_inicio_vigencia") ?? "").trim() || null;
   const fechaFin = String(formData.get("fecha_fin_vigencia") ?? "").trim() || null;
 
-  if (fechaInicio && !FECHA_ISO.test(fechaInicio)) {
-    return { ok: false, mensaje: "Fecha de inicio de vigencia inválida." };
-  }
-  if (fechaFin && !FECHA_ISO.test(fechaFin)) {
-    return { ok: false, mensaje: "Fecha de término de vigencia inválida." };
-  }
-  if (fechaInicio && fechaFin && fechaFin < fechaInicio) {
-    return {
-      ok: false,
-      mensaje: "La fecha de término de vigencia no puede ser anterior al inicio.",
-    };
-  }
-  if (precioOferta !== null && !fechaFin) {
-    return {
-      ok: false,
-      mensaje: "Toda oferta debe indicar una fecha de término de vigencia.",
-    };
-  }
-
   const tipoCondicion = String(formData.get("tipo_condicion") ?? "").trim();
   const detalleCondicion = String(formData.get("condiciones") ?? "").trim();
   const condicionesFinal = [tipoCondicion, detalleCondicion].filter(Boolean).join(": ") || null;
 
+  const validacion = validarOferta(
+    {
+      valor,
+      precio_oferta: precioOferta,
+      fecha_inicio_vigencia: fechaInicio,
+      fecha_fin_vigencia: fechaFin,
+      condiciones: condicionesFinal,
+    },
+    {
+      requerirFechasVigencia: true,
+      rechazarOfertaVencida: true,
+    },
+  );
+
+  if (!validacion.ok) {
+    return {
+      ok: false,
+      mensaje: validacion.errores.map((e) => e.mensaje).join(" "),
+    };
+  }
+
   const origen = rol === "terreno" ? "terreno" : "manual";
+  const hoyChile = obtenerFechaHoyChile();
 
   const { error } = await supabase.from("precios").insert({
     id_comercio: idComercio,
     id_producto: idProducto,
     valor,
-    precio_oferta: precioOferta,
-    fecha_inicio_vigencia: fechaInicio ?? new Date().toISOString().slice(0, 10),
-    fecha_fin_vigencia: fechaFin,
-    condiciones: condicionesFinal,
+    precio_oferta: validacion.datos.precio_oferta,
+    fecha_inicio_vigencia: validacion.datos.fecha_inicio_vigencia ?? hoyChile,
+    fecha_fin_vigencia: validacion.datos.fecha_fin_vigencia,
+    condiciones: validacion.datos.condiciones,
     origen,
     validado: false,
     estado_validacion: "pendiente",
