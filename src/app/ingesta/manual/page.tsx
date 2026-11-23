@@ -48,6 +48,12 @@ export default async function CargaCsvPage() {
     comercios = data ?? [];
   }
 
+  const { data: productos } = await supabase
+    .from("productos")
+    .select("id_producto, nombre, marca, formato")
+    .eq("activo", true)
+    .order("nombre");
+
   return (
     <Contenedor>
       <EncabezadoPagina
@@ -61,7 +67,7 @@ export default async function CargaCsvPage() {
       />
 
       <div className="mt-8 grid gap-6 pb-14 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
-        <FormularioCsv comercios={comercios} />
+        <FormularioCsv comercios={comercios} productos={productos ?? []} />
 
         <Panel className="lg:sticky lg:top-32">
           <PanelCabecera
