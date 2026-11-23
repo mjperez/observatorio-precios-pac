@@ -72,18 +72,37 @@ describe.skipIf(!hayConfig)("Comparador público con la clave anónima", () => {
     expect(filas.every((f) => typeof f.distancia_m === "number")).toBe(true);
   });
 
+  async function coordenadaDe(idComercio: number): Promise<{ lat: number; lng: number }> {
+    const res = await fetch(
+      `${URL_BASE}/rest/v1/v_comercios_coordenadas?select=lat,lng&id_comercio=eq.${idComercio}`,
+      { headers: cabeceras },
+    );
+    expect(res.status).toBe(200);
+    const filas = (await res.json()) as { lat: number; lng: number }[];
+    expect(filas.length).toBe(1);
+    return filas[0];
+  }
+
   it("usa el punto del vecino cuando se envía", async () => {
     const producto = await unProductoConPrecios();
+    // Se toma como referencia un comercio que efectivamente vende el producto,
+    // y su coordenada se lee de la base en vez de escribirla en el test: así la
+    // prueba sigue valiendo cuando el conjunto semilla se vuelve a anclar.
+    const referencia = (await rpc({ p_producto: producto }))[0];
+    const punto = await coordenadaDe(referencia.id_comercio);
+
     const filas = await rpc({
       p_producto: producto,
-      p_lat: -33.495,
-      p_lng: -70.723,
+      p_lat: punto.lat,
+      p_lng: punto.lng,
     });
 
     expect(filas.every((f) => f.ref_origen === "usuario")).toBe(true);
-    // El punto enviado es la coordenada de un comercio del seed: alguno queda a
-    // metros, no a cientos.
-    expect(Math.min(...filas.map((f) => f.distancia_m ?? Infinity))).toBeLessThan(50);
+    // El punto enviado es la coordenada del propio comercio, así que su
+    // distancia debe quedar en metros y no en kilómetros.
+    const propio = filas.find((f) => f.id_comercio === referencia.id_comercio);
+    expect(typeof propio?.distancia_m).toBe("number");
+    expect(propio?.distancia_m as number).toBeLessThan(50);
   });
 
   it("solo publica precios validados y con valor positivo", async () => {
