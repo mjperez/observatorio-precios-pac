@@ -10,7 +10,8 @@
     "lint:fix": "eslint --fix",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:rls": "vitest run --config vitest.rls.config.ts"
+    "test:rls": "vitest run --config vitest.rls.config.ts",
+    "indexar": "npx --yes tsx scripts/indexar_embeddings.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
