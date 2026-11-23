@@ -15,7 +15,7 @@ describe("texto de producto para la búsqueda (US-E1)", () => {
     expect(mapas.porProducto.size).toBe(1);
   });
 
-  it("incluye nombre, marca, formato, categoría y los dos tipos de alias", () => {
+  it("incluye nombre, marca, formato, categoría y alias del producto", () => {
     const mapas = agruparAlias([
       { alias: "papa", id_categoria: 4, id_producto: null },
       { alias: "patata", id_categoria: null, id_producto: 10 },
@@ -33,7 +33,29 @@ describe("texto de producto para la búsqueda (US-E1)", () => {
       mapas,
     );
 
-    expect(texto).toBe("Papas sin marca 1 kg Verduras y tubérculos papa patata");
+    expect(texto).toBe("Papas sin marca 1 kg Verduras y tubérculos patata");
+  });
+
+  it("no hereda los alias de la categoría", () => {
+    const mapas = agruparAlias([
+      { alias: "gaseosa", id_categoria: 9, id_producto: null },
+      { alias: "bebida", id_categoria: 9, id_producto: null },
+    ]);
+
+    const texto = textoProducto(
+      {
+        id_producto: 9,
+        id_categoria: 9,
+        nombre: "Té en bolsitas",
+        marca: "Supremo",
+        formato: "100 un",
+        categoria: "Bebidas e infusiones",
+      },
+      mapas,
+    );
+
+    expect(texto).toBe("Té en bolsitas Supremo 100 un Bebidas e infusiones");
+    expect(texto).not.toContain("gaseosa");
   });
 
   it("no repite un término idéntico", () => {

@@ -6,10 +6,10 @@
  * índice vectoriza una cosa y la consulta compara contra otra, las vías dejan
  * de ser comparables y aparecen resultados que ninguna de las dos justifica.
  *
- * Los alias entran porque la tabla `aliases` existe para que un vecino
- * encuentre "marraqueta" cuando el catálogo dice "pan corriente", y porque
- * aportan la forma singular que la tokenización no deriva: el alias "papa"
- * coincide con la expansión de "cazuela", "Papas" no.
+ * Los alias de producto entran porque la tabla `aliases` existe para que un
+ * vecino encuentre "marraqueta" cuando el catálogo dice "pan corriente", y
+ * porque aportan la forma singular que la tokenización no deriva. Los alias de
+ * categoría no entran: designan a la categoría, no a sus integrantes.
  */
 
 export type FilaAlias = {
@@ -19,6 +19,7 @@ export type FilaAlias = {
 };
 
 export type MapasAlias = {
+  /** No se usa para construir el texto; queda para expandir consultas. */
   porCategoria: Map<number, string[]>;
   porProducto: Map<number, string[]>;
 };
@@ -64,12 +65,15 @@ export function nombreDeCategoria(
 }
 
 export function textoProducto(producto: ProductoParaTexto, alias: MapasAlias): string {
+  // Solo los alias del producto. Un alias de categoría designa a la categoría,
+  // no a cada uno de sus integrantes: inyectarlo en todos haría que el té
+  // heredara "gaseosa" y el azúcar "dulce de leche", que es falso. Para que
+  // "papa" encuentre Papas hay que cargarlo como alias del producto.
   const terminos = new Set<string>([
     producto.nombre,
     producto.marca,
     producto.formato,
     producto.categoria ?? "",
-    ...(alias.porCategoria.get(producto.id_categoria) ?? []),
     ...(alias.porProducto.get(producto.id_producto) ?? []),
   ]);
 
