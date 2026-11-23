@@ -7,6 +7,12 @@ import {
   similitudCoseno,
 } from "@/lib/embeddings";
 import { fusionarRangos, type Candidato, type Fusionado } from "@/lib/hibrida";
+import {
+  agruparAlias,
+  nombreDeCategoria,
+  textoProducto,
+  type FilaAlias,
+} from "@/lib/texto_producto";
 
 type Respuesta = {
   productos: Fusionado[];
@@ -58,7 +64,7 @@ export async function GET(request: NextRequest) {
   // de otro proveedor y no serían comparables.
   const { data: catalogo, error: errorCatalogo } = await supabase
     .from("productos")
-    .select("id_producto, nombre, marca, formato, categorias(nombre)")
+    .select("id_producto, id_categoria, nombre, marca, formato, categorias(nombre)")
     .eq("activo", true);
 
   if (errorCatalogo && vectoriales.length === 0) {
@@ -69,14 +75,26 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const { data: filasAlias } = await supabase
+    .from("aliases")
+    .select("alias, id_categoria, id_producto");
+
+  const mapasAlias = agruparAlias((filasAlias ?? []) as FilaAlias[]);
   const vectorConsulta = embeddingLocal(consulta);
 
   const lexicos: Candidato[] = (catalogo ?? [])
     .map((producto) => {
-      const categoria = Array.isArray(producto.categorias)
-        ? producto.categorias[0]?.nombre
-        : null;
-      const texto = `${producto.nombre} ${producto.marca} ${producto.formato} ${categoria ?? ""}`;
+      const texto = textoProducto(
+        {
+          id_producto: producto.id_producto,
+          id_categoria: producto.id_categoria,
+          nombre: producto.nombre,
+          marca: producto.marca,
+          formato: producto.formato,
+          categoria: nombreDeCategoria(producto.categorias),
+        },
+        mapasAlias,
+      );
       return {
         formato: producto.formato,
         id_producto: producto.id_producto,

@@ -28,6 +28,12 @@
 import { config } from "dotenv";
 import { createClient } from "@supabase/supabase-js";
 import { aLiteralVector, generarEmbedding } from "../src/lib/embeddings";
+import {
+  agruparAlias,
+  nombreDeCategoria,
+  textoProducto,
+  type FilaAlias,
+} from "../src/lib/texto_producto";
 
 config({ path: ".env.local" });
 // Variables bajadas con `vercel env pull`. Se cargan después para que no
@@ -61,12 +67,6 @@ type FilaProducto = {
   categorias: { nombre: string } | { nombre: string }[] | null;
 };
 
-type FilaAlias = {
-  alias: string;
-  id_categoria: number | null;
-  id_producto: number | null;
-};
-
 function exigir(nombre: string): string {
   const valor = process.env[nombre];
   if (!valor) {
@@ -74,37 +74,6 @@ function exigir(nombre: string): string {
     process.exit(1);
   }
   return valor;
-}
-
-function nombreCategoria(categorias: FilaProducto["categorias"]): string {
-  if (Array.isArray(categorias)) return categorias[0]?.nombre ?? "";
-  return categorias?.nombre ?? "";
-}
-
-/**
- * Texto que se vectoriza. Los alias entran porque la tabla existe justamente
- * para que un vecino encuentre "marraqueta" cuando el catálogo dice "pan
- * corriente", y porque aportan la forma singular que la tokenización no deriva:
- * el alias "papa" sí coincide con la expansión de "cazuela", "Papas" no.
- */
-function textoIndexado(
-  producto: FilaProducto,
-  aliasPorCategoria: Map<number, string[]>,
-  aliasPorProducto: Map<number, string[]>,
-): string {
-  const terminos = new Set<string>([
-    producto.nombre,
-    producto.marca,
-    producto.formato,
-    nombreCategoria(producto.categorias),
-    ...(aliasPorCategoria.get(producto.id_categoria) ?? []),
-    ...(aliasPorProducto.get(producto.id_producto) ?? []),
-  ]);
-
-  return [...terminos]
-    .map((termino) => termino.trim())
-    .filter(Boolean)
-    .join(" ");
 }
 
 async function main() {
@@ -156,28 +125,10 @@ async function main() {
     process.exit(1);
   }
 
-  const aliasPorCategoria = new Map<number, string[]>();
-  const aliasPorProducto = new Map<number, string[]>();
-
-  for (const fila of (alias ?? []) as FilaAlias[]) {
-    const termino = fila.alias?.trim();
-    if (!termino) continue;
-
-    if (fila.id_categoria !== null) {
-      aliasPorCategoria.set(fila.id_categoria, [
-        ...(aliasPorCategoria.get(fila.id_categoria) ?? []),
-        termino,
-      ]);
-    } else if (fila.id_producto !== null) {
-      aliasPorProducto.set(fila.id_producto, [
-        ...(aliasPorProducto.get(fila.id_producto) ?? []),
-        termino,
-      ]);
-    }
-  }
+  const mapasAlias = agruparAlias((alias ?? []) as FilaAlias[]);
 
   console.log(
-    `${productos.length} productos por indexar. Alias: ${aliasPorCategoria.size} categorías, ${aliasPorProducto.size} productos.`,
+    `${productos.length} productos por indexar. Alias: ${mapasAlias.porCategoria.size} categorías, ${mapasAlias.porProducto.size} productos.`,
   );
 
   let indexados = 0;
@@ -188,7 +139,17 @@ async function main() {
     const lote = productos.slice(i, i + LOTE);
 
     for (const producto of lote) {
-      const texto = textoIndexado(producto, aliasPorCategoria, aliasPorProducto);
+      const texto = textoProducto(
+        {
+          id_producto: producto.id_producto,
+          id_categoria: producto.id_categoria,
+          nombre: producto.nombre,
+          marca: producto.marca,
+          formato: producto.formato,
+          categoria: nombreDeCategoria(producto.categorias),
+        },
+        mapasAlias,
+      );
       if (detalle) console.log(`  [${producto.id_producto}] ${texto}`);
 
       try {
