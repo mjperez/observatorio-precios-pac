@@ -3,15 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/utils/supabase/server";
 import { parseCsv, parsearPrecio } from "@/lib/csv";
+import { obtenerFechaHoyChile, validarOferta } from "@/lib/validacion_fechas";
 
 const ROLES_INGESTA = ["comercio", "terreno", "administrador"];
-// 900 KB y no 1 MB: el límite por defecto del cuerpo de una Server Action en
-// Next es 1 MB, y el multipart pesa algo más que el archivo. Con 900 KB el
-// rechazo lo da este código, con un mensaje claro, antes que el framework.
 const TAMANO_MAXIMO = 900_000;
 const FILAS_MAXIMAS = 500;
 const COLUMNAS = ["nombre", "marca", "formato", "precio"];
-const FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/;
 
 export type ErrorFila = { linea: number; mensaje: string };
 
@@ -26,9 +23,6 @@ function fallo(mensaje: string): ResultadoCarga {
   return { ok: false, insertadas: 0, errores: [], mensaje };
 }
 
-// Todas las filas se validan antes de escribir. Si una sola falla no se inserta
-// nada: la planilla se corrige y se vuelve a subir completa, así no quedan
-// cargas a medias ni precios duplicados por reintentos.
 export async function cargarCsv(
   _estado: ResultadoCarga | null,
   formData: FormData,
@@ -64,8 +58,6 @@ export async function cargarCsv(
     return fallo("Selecciona un comercio.");
   }
 
-  // Un usuario con rol comercio solo puede cargar sobre sus propios locales.
-  // La política RLS lo exige igual, pero el aviso temprano es más claro.
   if (rol === "comercio") {
     const { data: vinculo } = await supabase
       .from("usuarios_comercios")
@@ -93,7 +85,6 @@ export async function cargarCsv(
     );
   }
 
-  // Columnas opcionales para promociones y vigencia
   const idxOferta = cabecera.indexOf("precio_oferta");
   const idxInicio = cabecera.indexOf("fecha_inicio_vigencia");
   const idxFin = cabecera.indexOf("fecha_fin_vigencia");
@@ -115,6 +106,7 @@ export async function cargarCsv(
     (productos ?? []).map((p) => [clave(p.nombre, p.marca, p.formato), p]),
   );
 
+  const hoyChile = obtenerFechaHoyChile();
   const errores: ErrorFila[] = [];
   const insertables: {
     id_producto: number;
@@ -129,7 +121,6 @@ export async function cargarCsv(
     estado_validacion: string;
   }[] = [];
   const vistos = new Map<number, number>();
-  const hoyIso = new Date().toISOString().slice(0, 10);
 
   for (let i = 1; i < filas.length; i++) {
     const fila = filas[i];
@@ -177,70 +168,59 @@ export async function cargarCsv(
       });
       continue;
     }
+    vistos.set(producto.id_producto, linea);
 
-    // Validación opcional de precio oferta y vigencias
     const ofertaRaw = idxOferta !== -1 ? (fila[idxOferta] ?? "").trim() : "";
     let precioOferta: number | null = null;
     if (ofertaRaw !== "") {
       precioOferta = parsearPrecio(ofertaRaw);
-      if (precioOferta === null || precioOferta >= valor) {
+      if (precioOferta === null) {
         errores.push({
           linea,
-          mensaje: `precio_oferta inválido ("${ofertaRaw}"): debe ser un monto válido menor al precio normal`,
+          mensaje: `precio_oferta inválido ("${ofertaRaw}"): usa formato numérico sin separador de miles`,
         });
         continue;
       }
     }
 
-    const inicioRaw = idxInicio !== -1 ? (fila[idxInicio] ?? "").trim() : "";
-    const finRaw = idxFin !== -1 ? (fila[idxFin] ?? "").trim() : "";
-    const condRaw = idxCondiciones !== -1 ? (fila[idxCondiciones] ?? "").trim() : "";
+    const inicioRaw = idxInicio !== -1 ? (fila[idxInicio] ?? "").trim() || null : null;
+    const finRaw = idxFin !== -1 ? (fila[idxFin] ?? "").trim() || null : null;
+    const condRaw = idxCondiciones !== -1 ? (fila[idxCondiciones] ?? "").trim() || null : null;
 
-    if (inicioRaw !== "" && !FECHA_ISO.test(inicioRaw)) {
-      errores.push({
-        linea,
-        mensaje: `fecha_inicio_vigencia inválida ("${inicioRaw}"): usa formato AAAA-MM-DD`,
-      });
+    // Si hay oferta en CSV y no se especificó inicio, asume la fecha actual en Chile
+    const inicioEfectivo =
+      precioOferta !== null && inicioRaw === null ? hoyChile : inicioRaw;
+
+    const validacion = validarOferta(
+      {
+        valor,
+        precio_oferta: precioOferta,
+        fecha_inicio_vigencia: inicioEfectivo,
+        fecha_fin_vigencia: finRaw,
+        condiciones: condRaw,
+      },
+      {
+        requerirFechasVigencia: true,
+        rechazarOfertaVencida: true,
+        fechaReferencia: hoyChile,
+      },
+    );
+
+    if (!validacion.ok) {
+      for (const err of validacion.errores) {
+        errores.push({ linea, mensaje: err.mensaje });
+      }
       continue;
     }
-
-    if (finRaw !== "" && !FECHA_ISO.test(finRaw)) {
-      errores.push({
-        linea,
-        mensaje: `fecha_fin_vigencia inválida ("${finRaw}"): usa formato AAAA-MM-DD`,
-      });
-      continue;
-    }
-
-    const fechaInicio = inicioRaw || hoyIso;
-    const fechaFin = finRaw || null;
-
-    if (fechaFin && fechaFin < fechaInicio) {
-      errores.push({
-        linea,
-        mensaje: "fecha_fin_vigencia no puede ser anterior a fecha_inicio_vigencia",
-      });
-      continue;
-    }
-
-    if (precioOferta !== null && !fechaFin) {
-      errores.push({
-        linea,
-        mensaje: "las filas con precio_oferta deben incluir fecha_fin_vigencia (AAAA-MM-DD)",
-      });
-      continue;
-    }
-
-    vistos.set(producto.id_producto, linea);
 
     insertables.push({
       id_producto: producto.id_producto,
       id_comercio: idComercio,
       valor,
-      precio_oferta: precioOferta,
-      fecha_inicio_vigencia: fechaInicio,
-      fecha_fin_vigencia: fechaFin,
-      condiciones: condRaw ? condRaw.slice(0, 240) : null,
+      precio_oferta: validacion.datos.precio_oferta,
+      fecha_inicio_vigencia: validacion.datos.fecha_inicio_vigencia ?? hoyChile,
+      fecha_fin_vigencia: validacion.datos.fecha_fin_vigencia,
+      condiciones: validacion.datos.condiciones,
       origen: "csv",
       validado: false,
       estado_validacion: "pendiente",
